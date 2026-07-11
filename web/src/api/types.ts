@@ -1,7 +1,7 @@
 /**
  * Hand-written TypeScript mirrors of the PipeRouter Admin API contract.
  *
- * Source of truth: docs/ARCHITECTURE.md ("internal/api") and
+ * Source of truth: api/openapi.yaml (the Admin API contract) and
  * internal/config/types.go (JSON tags). All field names are snake_case,
  * exactly as the Go backend emits them. Do not rename fields.
  */
@@ -276,7 +276,7 @@ export interface DiagnosticsResult {
 // Errors
 // ---------------------------------------------------------------------------
 
-/** Client-visible error-code vocabulary (docs/ARCHITECTURE.md). */
+/** Client-visible error-code vocabulary (api/openapi.yaml → ApiError.error). */
 export type ApiErrorCode =
   | 'route_not_found'
   | 'upstream_connection_failed'

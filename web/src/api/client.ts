@@ -1,7 +1,7 @@
 /**
  * PipeRouter Admin API client — thin fetch wrapper over /api/v1.
  *
- * Contract: docs/ARCHITECTURE.md ("internal/api"). All request/response
+ * Contract: api/openapi.yaml (the Admin API spec). All request/response
  * bodies are JSON; error responses carry {error, detail?, issues?} and are
  * surfaced as thrown ApiError instances.
  */

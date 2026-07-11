@@ -1,6 +1,6 @@
 /**
  * Route form validation + rewrite preview — mirrors backend rules exactly
- * (PRD §6.3, §6.4, §19.3; docs/ARCHITECTURE.md internal/config + internal/router).
+ * (mirrors the server-side config validation in internal/config + internal/router).
  */
 import type { RouteConfig, TransportConfig } from '@/api/types'
 
