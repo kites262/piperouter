@@ -25,7 +25,7 @@ defineEmits<{ refresh: []; 'toggle-pause': [] }>()
 </script>
 
 <template>
-  <div class="card-flat flex flex-wrap items-end gap-3 p-3">
+  <div class="glass-toolbar flex flex-wrap items-end gap-3 p-3">
     <label class="flex min-w-40 flex-col gap-1">
       <span class="text-xs font-medium text-fg-muted">Route</span>
       <Select v-model="route">

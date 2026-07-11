@@ -181,20 +181,22 @@ const cards = computed<StatCardModel[]>(() => {
 
 <template>
   <section class="space-y-6">
-    <header class="flex items-end justify-between gap-4">
+    <header class="flex items-end justify-between gap-4 animate-fade-up">
       <div>
-        <h1 class="text-lg font-semibold text-fg">Dashboard</h1>
+        <h1 class="text-lg font-semibold tracking-tight text-fg">Dashboard</h1>
         <p class="mt-1 text-sm text-fg-muted">Service health, traffic and latency at a glance.</p>
       </div>
-      <span class="hidden shrink-0 font-mono text-[11px] text-fg-muted sm:block">
+      <span
+        class="hidden shrink-0 rounded-full border border-border px-2.5 py-1 font-mono text-[11px] text-fg-muted sm:block"
+        style="background: var(--toolbar-bg)"
+      >
         auto-refresh · 3s
       </span>
     </header>
 
-    <!-- Poll failing but stale data still on screen -->
     <div
       v-if="staleWarning"
-      class="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning"
+      class="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning"
       role="alert"
     >
       <TriangleAlert class="h-3.5 w-3.5 shrink-0" />
@@ -203,7 +205,6 @@ const cards = computed<StatCardModel[]>(() => {
       </span>
     </div>
 
-    <!-- Initial loading skeleton -->
     <template v-if="initialLoading">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-hidden="true">
         <div v-for="i in 8" :key="i" class="glass-panel p-4">
@@ -218,12 +219,13 @@ const cards = computed<StatCardModel[]>(() => {
       </div>
     </template>
 
-    <!-- Admin API unreachable before any data arrived -->
     <div
       v-else-if="!hasData"
-      class="card-flat flex flex-col items-center gap-3 px-6 py-14 text-center"
+      class="glass-panel flex flex-col items-center gap-3 px-6 py-14 text-center"
     >
-      <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-danger-soft text-danger">
+      <div
+        class="flex h-11 w-11 items-center justify-center rounded-xl border border-danger/25 bg-danger-soft text-danger"
+      >
         <ServerCrash class="h-5 w-5" />
       </div>
       <p class="text-sm font-medium text-fg">Cannot reach the admin API</p>
@@ -234,14 +236,13 @@ const cards = computed<StatCardModel[]>(() => {
       </Button>
     </div>
 
-    <!-- Live dashboard -->
     <template v-else>
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           v-for="(c, i) in cards"
           :key="c.key"
           class="animate-fade-up"
-          :style="{ animationDelay: `${i * 45}ms` }"
+          :class="`stagger-${Math.min(i + 1, 8)}`"
           :label="c.label"
           :value="c.value"
           :sub="c.sub"
@@ -254,10 +255,10 @@ const cards = computed<StatCardModel[]>(() => {
       </div>
 
       <div class="grid items-start gap-6 xl:grid-cols-5">
-        <div class="animate-fade-up xl:col-span-3" style="animation-delay: 360ms">
+        <div class="animate-fade-up stagger-7 xl:col-span-3">
           <RoutesOverviewTable :routes="routeMetrics" :prefixes="prefixes" />
         </div>
-        <div class="animate-fade-up xl:col-span-2" style="animation-delay: 405ms">
+        <div class="animate-fade-up stagger-8 xl:col-span-2">
           <RecentErrorsPanel :entries="errorEntries" />
         </div>
       </div>

@@ -45,7 +45,7 @@ function statusLabel(e: AccessLogEntry): string {
       </RouterLink>
     </header>
 
-    <div v-if="loading" class="card-flat divide-y divide-border" aria-hidden="true">
+    <div v-if="loading" class="glass-panel divide-y divide-border" aria-hidden="true">
       <div v-for="i in 4" :key="i" class="px-3 py-3">
         <div class="h-3.5 w-3/4 animate-pulse rounded bg-surface-raised" />
         <div class="mt-2 h-3 w-1/2 animate-pulse rounded bg-surface-raised" />
@@ -64,7 +64,7 @@ function statusLabel(e: AccessLogEntry): string {
       <li
         v-for="(e, i) in rows"
         :key="`${e.time}-${i}`"
-        class="flex items-start gap-2.5 px-3 py-2.5"
+        class="flex items-start gap-2.5 px-3 py-2.5 transition-colors duration-150 hover:bg-surface-raised/50"
         :title="formatLocalDateTime(e.time)"
       >
         <Badge :variant="statusVariant(e)" mono>{{ statusLabel(e) }}</Badge>

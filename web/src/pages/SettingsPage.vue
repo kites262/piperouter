@@ -235,8 +235,8 @@ function formatUptime(seconds: number): string {
 
 <template>
   <section class="space-y-6">
-    <header>
-      <h1 class="text-lg font-semibold text-fg">Settings</h1>
+    <header class="animate-fade-up">
+      <h1 class="text-lg font-semibold tracking-tight text-fg">Settings</h1>
       <p class="mt-1 text-sm text-fg-muted">
         Listeners, TLS, log level and recent-log capacity. Routes and transports are managed on
         their own pages and always hot-reload.
@@ -244,11 +244,9 @@ function formatUptime(seconds: number): string {
     </header>
 
     <div class="grid items-start gap-6 xl:grid-cols-3">
-      <!-- ============================== Editable form ====================== -->
-      <div class="space-y-4 xl:col-span-2">
-        <!-- Initial loading skeleton -->
+      <div class="animate-fade-up stagger-1 space-y-4 xl:col-span-2">
         <template v-if="initialLoading">
-          <div v-for="i in 3" :key="i" class="card-flat p-4" aria-hidden="true">
+          <div v-for="i in 3" :key="i" class="glass-panel p-4" aria-hidden="true">
             <div class="h-4 w-32 animate-pulse rounded bg-surface-raised" />
             <div class="mt-4 space-y-4">
               <div class="h-9 w-full animate-pulse rounded-md bg-surface-raised" />
@@ -257,8 +255,7 @@ function formatUptime(seconds: number): string {
           </div>
         </template>
 
-        <!-- Config never loaded -->
-        <Card v-else-if="envelope === null" title="Configuration unavailable">
+        <Card v-else-if="envelope === null" glass title="Configuration unavailable">
           <p class="flex items-start gap-2 text-sm text-danger">
             <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0" />
             <span class="min-w-0 break-words">{{ loadError }}</span>
@@ -318,7 +315,7 @@ function formatUptime(seconds: number): string {
           </div>
 
           <!-- Proxy server -->
-          <Card title="Proxy server">
+          <Card glass title="Proxy server">
             <template #header>
               <Badge variant="warning">restart required</Badge>
             </template>
@@ -384,7 +381,7 @@ function formatUptime(seconds: number): string {
           </Card>
 
           <!-- Admin server -->
-          <Card title="Admin server">
+          <Card glass title="Admin server">
             <template #header>
               <Badge variant="warning">restart required</Badge>
             </template>
@@ -406,7 +403,7 @@ function formatUptime(seconds: number): string {
           </Card>
 
           <!-- Runtime -->
-          <Card title="Runtime">
+          <Card glass title="Runtime">
             <template #header>
               <Badge variant="success">applies hot</Badge>
             </template>
@@ -486,7 +483,7 @@ function formatUptime(seconds: number): string {
       </div>
 
       <!-- ============================== About ============================== -->
-      <Card title="About">
+      <Card glass class="animate-fade-up stagger-2" title="About">
         <template #header>
           <Badge variant="muted">read-only</Badge>
         </template>

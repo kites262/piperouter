@@ -55,7 +55,7 @@ function routeErrors(r: RouteMetrics): number {
       </RouterLink>
     </header>
 
-    <div v-if="loading" class="card-flat space-y-3 p-4" aria-hidden="true">
+    <div v-if="loading" class="glass-panel space-y-3 p-4" aria-hidden="true">
       <div v-for="i in 6" :key="i" class="h-4 animate-pulse rounded bg-surface-raised" />
     </div>
 

@@ -1,7 +1,7 @@
 # PipeRouter release image (PRD §21.2): 3-stage build.
 #
-#   1. node    — build the Vue WebUI bundle
-#   2. go      — embed the bundle and compile the static binary
+#   1. node    — Vite-build the Vue WebUI into internal/webui/dist
+#   2. go      — //go:embed that dist and compile the static binary
 #   3. runtime — minimal distroless image with just the binary + default config
 #
 # Build from the REPO ROOT (the build context must be the repository):
@@ -13,18 +13,18 @@
 ARG VERSION=0.1.0
 
 # ---------- Stage 1: frontend --------------------------------------------
+# Monorepo layout so Vite can write outDir=../internal/webui/dist.
 FROM node:24-alpine AS frontend
-WORKDIR /src/web
+WORKDIR /src
 
-# Install dependencies first so they cache independently of source edits.
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
+COPY web/package.json web/package-lock.json ./web/
+RUN cd web && npm ci
 
-# api/ is copied because the OpenAPI client generator reads ../api/openapi.yaml.
-COPY api/ /src/api/
-COPY web/ ./
-# Regenerate the typed client from the contract (PRD §21.1 step 2), then build.
-RUN npm run generate:api && npm run build
+# api/ is needed by the OpenAPI client generator (../api/openapi.yaml).
+COPY api/ ./api/
+COPY web/ ./web/
+RUN cd web && npm run generate:api && npm run build
+# → /src/internal/webui/dist/{index.html,assets/app.js,assets/app.css,...}
 
 # ---------- Stage 2: backend ----------------------------------------------
 FROM golang:1.26-alpine AS backend
@@ -35,8 +35,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-# Replace the committed placeholder with the real WebUI bundle (= `make embed`).
-COPY --from=frontend /src/web/dist/ internal/webui/dist/
+# dist/ is gitignored — inject the Vite output from the frontend stage.
+COPY --from=frontend /src/internal/webui/dist/ internal/webui/dist/
 
 RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \

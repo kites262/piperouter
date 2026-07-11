@@ -11,8 +11,8 @@ const props = withDefaults(
 )
 
 const variants = {
-  default: 'border-border text-fg-secondary',
-  accent: 'border-accent/30 bg-accent-soft text-accent',
+  default: 'border-border bg-surface/40 text-fg-secondary backdrop-blur-sm',
+  accent: 'border-accent/30 bg-accent-soft text-accent shadow-[0_0_12px_-4px_rgb(109_124_255_/_0.4)]',
   success: 'border-success/30 bg-success-soft text-success',
   warning: 'border-warning/30 bg-warning-soft text-warning',
   danger: 'border-danger/30 bg-danger-soft text-danger',

@@ -2,8 +2,11 @@
 /dist/
 /web/dist/
 /web/node_modules/
-internal/webui/dist/*
-!internal/webui/dist/index.html
+
+# Vite writes the production bundle straight here for //go:embed.
+# Nothing under dist/ is tracked — `make ensure-embed` / `make frontend`
+# populate it locally (throwaway .gitkeep or full UI).
+internal/webui/dist/
 
 # Local configs / runtime files
 piperouter.yaml

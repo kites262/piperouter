@@ -204,14 +204,16 @@ function clearHistory(): void {
 
 <template>
   <section class="space-y-6">
-    <header>
-      <h1 class="text-lg font-semibold text-fg">Diagnostics</h1>
+    <header class="animate-fade-up">
+      <h1 class="text-lg font-semibold tracking-tight text-fg">Diagnostics</h1>
       <p class="mt-1 text-sm text-fg-muted">
         Route and transport tests through the real proxy pipeline — rewrite, transport, target.
       </p>
     </header>
 
-    <Tabs v-model="tab" :tabs="TABS" />
+    <div class="animate-fade-up stagger-1">
+      <Tabs v-model="tab" :tabs="TABS" />
+    </div>
 
     <!-- Options poll failing but stale lists still usable -->
     <div
@@ -226,9 +228,8 @@ function clearHistory(): void {
     </div>
 
     <div class="grid items-start gap-6 xl:grid-cols-5">
-      <!-- Test form -->
-      <div class="xl:col-span-2">
-        <Card :title="tab === 'route' ? 'Route Test' : 'Transport Test'">
+      <div class="animate-fade-up stagger-2 xl:col-span-2">
+        <Card glass :title="tab === 'route' ? 'Route Test' : 'Transport Test'">
           <!-- Loading skeleton -->
           <div v-if="optionsLoading" class="space-y-4" aria-hidden="true">
             <div v-for="i in 3" :key="i">
@@ -333,8 +334,7 @@ function clearHistory(): void {
         </Card>
       </div>
 
-      <!-- Result + session history -->
-      <div class="space-y-6 xl:col-span-3">
+      <div class="animate-fade-up stagger-3 space-y-6 xl:col-span-3">
         <StagedResult v-if="displayedRun !== null" :run="displayedRun" />
         <EmptyState
           v-else
@@ -344,7 +344,7 @@ function clearHistory(): void {
           <template #icon><Activity class="h-5 w-5" /></template>
         </EmptyState>
 
-        <Card v-if="runs.length > 0" title="Session history">
+        <Card v-if="runs.length > 0" glass title="Session history">
           <template #header>
             <Button variant="ghost" size="sm" @click="clearHistory">
               <Trash2 class="h-3.5 w-3.5" />
@@ -355,11 +355,11 @@ function clearHistory(): void {
             <li v-for="run in runs" :key="run.id">
               <button
                 type="button"
-                class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors duration-150"
+                class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors duration-150"
                 :class="
                   displayedRun !== null && displayedRun.id === run.id
-                    ? 'bg-accent-soft'
-                    : 'hover:bg-surface-raised'
+                    ? 'bg-accent-soft shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]'
+                    : 'hover:bg-surface-raised/70'
                 "
                 @click="selectedRunId = run.id"
               >

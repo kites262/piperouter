@@ -16,22 +16,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build the WebUI
+      - name: Build the WebUI into the Go embed directory
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: |
+          # Vite outDir is internal/webui/dist (stable assets/app.js + app.css).
           cd web
           npm ci
           npm run generate:api
           npm run build
-
-      - name: Embed the WebUI for go:embed
-        run: |
-          rm -rf internal/webui/dist
-          cp -r web/dist internal/webui/dist
+          test -f ../internal/webui/dist/assets/app.js
+          test -f ../internal/webui/dist/index.html
 
       - uses: actions/setup-go@v5
         with:

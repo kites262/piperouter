@@ -105,23 +105,25 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-5">
-    <div>
-      <h1 class="text-lg font-semibold text-fg">Logs</h1>
+    <div class="animate-fade-up">
+      <h1 class="text-lg font-semibold tracking-tight text-fg">Logs</h1>
       <p class="mt-1 text-sm text-fg-muted">
         Recent access log ring buffer — no bodies, no headers.
       </p>
     </div>
 
-    <LogsFilterBar
-      v-model:route="routeFilter"
-      v-model:status-class="statusFilter"
-      v-model:limit="limitFilter"
-      :routes="routeNames"
-      :paused="isPaused"
-      :refreshing="refreshing"
-      @refresh="onManualRefresh"
-      @toggle-pause="togglePause"
-    />
+    <div class="animate-fade-up stagger-1">
+      <LogsFilterBar
+        v-model:route="routeFilter"
+        v-model:status-class="statusFilter"
+        v-model:limit="limitFilter"
+        :routes="routeNames"
+        :paused="isPaused"
+        :refreshing="refreshing"
+        @refresh="onManualRefresh"
+        @toggle-pause="togglePause"
+      />
+    </div>
 
     <!-- Refresh failed but stale data is still on screen. -->
     <div

@@ -146,31 +146,31 @@ const adminPosture = computed(() => {
 
 <template>
   <div class="flex h-screen overflow-hidden">
-    <!-- Sidebar — liquid glass (PRD §18.3) -->
+    <!-- Sidebar — liquid glass -->
     <aside class="glass z-20 flex w-60 shrink-0 flex-col border-y-0 border-l-0">
       <div class="flex h-14 items-center gap-2.5 border-b border-border px-4">
         <span
-          class="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-accent elevate"
+          class="logo-glow flex h-8 w-8 items-center justify-center rounded-lg border border-accent/20 bg-accent-soft text-accent elevate"
         >
           <Waypoints class="h-4.5 w-4.5" />
         </span>
         <div class="leading-tight">
           <p class="text-sm font-semibold tracking-tight text-fg">PipeRouter</p>
-          <p class="text-[10px] uppercase tracking-widest text-fg-muted">Admin Console</p>
+          <p class="text-[10px] uppercase tracking-[0.14em] text-fg-muted">Admin Console</p>
         </div>
       </div>
 
       <nav class="relative flex-1 space-y-1 overflow-y-auto p-3">
-        <!-- Sliding selection indicator (behind the links) -->
         <span
-          class="nav-indicator pointer-events-none absolute top-0 z-0 rounded-md bg-accent-soft"
+          class="nav-indicator pointer-events-none absolute top-0 z-0 rounded-lg bg-accent-soft"
           :class="indicator.visible ? 'opacity-100' : 'opacity-0'"
           :style="{
             transform: `translateY(${indicator.top}px)`,
             height: `${indicator.height}px`,
             left: `${indicator.left}px`,
             width: `${indicator.width}px`,
-            boxShadow: 'inset 2px 0 0 0 var(--color-accent)',
+            boxShadow:
+              'inset 2px 0 0 0 var(--color-accent), 0 0 20px -8px rgb(109 124 255 / 0.45)',
           }"
           aria-hidden="true"
         />
@@ -179,11 +179,11 @@ const adminPosture = computed(() => {
           :key="item.to"
           :ref="(el) => captureItem(el as Element | ComponentPublicInstance | null, i)"
           :to="item.to"
-          class="relative z-10 flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors duration-150"
+          class="relative z-10 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150"
           :class="
             isActive(item.to)
               ? 'font-medium text-accent'
-              : 'text-fg-secondary hover:bg-surface-raised hover:text-fg'
+              : 'text-fg-secondary hover:bg-surface-raised/70 hover:text-fg'
           "
         >
           <component :is="item.icon" class="h-4 w-4 shrink-0" />
@@ -191,12 +191,10 @@ const adminPosture = computed(() => {
         </RouterLink>
       </nav>
 
-      <!-- Pinned bottom: configuration + preferences, kept apart from the
-           day-to-day views above (PRD §18 low-noise console). -->
       <div class="space-y-1 border-t border-border p-3">
         <RouterLink
           to="/settings"
-          class="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors duration-150"
+          class="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150"
           :class="navClass(isActive('/settings'))"
         >
           <Settings class="h-4 w-4 shrink-0" />
@@ -204,7 +202,7 @@ const adminPosture = computed(() => {
         </RouterLink>
         <button
           type="button"
-          class="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-fg-secondary transition-colors duration-150 hover:bg-surface-raised hover:text-fg"
+          class="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-fg-secondary transition-colors duration-150 hover:bg-surface-raised/70 hover:text-fg"
           :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`"
           :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`"
           @click="toggleTheme"
@@ -220,20 +218,31 @@ const adminPosture = computed(() => {
     </aside>
 
     <div class="flex min-w-0 flex-1 flex-col">
-      <!-- Top status bar — liquid glass -->
       <header
         class="glass z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-x-0 border-t-0 px-5"
       >
-        <h1 class="truncate text-sm font-semibold text-fg">{{ pageTitle }}</h1>
+        <div class="min-w-0">
+          <h1 class="truncate text-sm font-semibold tracking-tight text-fg">{{ pageTitle }}</h1>
+          <div
+            v-if="chip.tone === 'success'"
+            class="health-ribbon mt-1.5 max-w-[8rem]"
+            aria-hidden="true"
+          />
+        </div>
         <div class="flex items-center gap-3">
           <div
-            class="flex items-center gap-2 rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs"
+            class="flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs shadow-[inset_0_1px_0_rgb(255_255_255_/_0.06)]"
+            style="background: var(--toolbar-bg); backdrop-filter: blur(10px)"
           >
             <StatusDot :status="chip.tone" />
             <span class="text-fg-secondary">{{ chip.label }}</span>
-            <span v-if="shortRevision" class="font-mono text-fg-muted tnums">{{ shortRevision }}</span>
+            <span v-if="shortRevision" class="font-mono text-fg-muted tnums">{{
+              shortRevision
+            }}</span>
           </div>
-          <span v-if="status" class="font-mono text-xs text-fg-muted tnums">v{{ status.version }}</span>
+          <span v-if="status" class="font-mono text-xs text-fg-muted tnums"
+            >v{{ status.version }}</span
+          >
         </div>
       </header>
 

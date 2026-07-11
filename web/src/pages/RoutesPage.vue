@@ -267,9 +267,9 @@ function goDetail(name: string): void {
 
 <template>
   <section class="space-y-6">
-    <div class="flex items-start justify-between gap-4">
+    <div class="flex items-start justify-between gap-4 animate-fade-up">
       <div>
-        <h1 class="text-lg font-semibold text-fg">Routes</h1>
+        <h1 class="text-lg font-semibold tracking-tight text-fg">Routes</h1>
         <p class="mt-1 text-sm text-fg-muted">
           Prefix → target mappings with live per-route metrics.
         </p>
@@ -280,18 +280,16 @@ function goDetail(name: string): void {
       </Button>
     </div>
 
-    <!-- Loading skeleton -->
-    <div v-if="routes === null && loadError === ''" class="card-flat p-4" aria-busy="true">
+    <div v-if="routes === null && loadError === ''" class="glass-panel p-4" aria-busy="true">
       <div class="animate-pulse space-y-3">
         <div class="h-4 w-1/3 rounded bg-surface-raised" />
         <div v-for="i in 5" :key="i" class="h-9 rounded bg-surface-raised/70" />
       </div>
     </div>
 
-    <!-- Load error -->
     <div
       v-else-if="routes === null"
-      class="card-flat flex flex-col items-center gap-3 px-6 py-12 text-center"
+      class="glass-panel flex flex-col items-center gap-3 px-6 py-12 text-center"
     >
       <p class="text-sm font-medium text-danger">Failed to load routes</p>
       <p class="max-w-md break-all font-mono text-xs text-fg-muted">{{ loadError }}</p>
@@ -314,12 +312,24 @@ function goDetail(name: string): void {
       </Button>
     </EmptyState>
 
-    <!-- Table -->
-    <div v-else class="space-y-2">
+    <div v-else class="animate-fade-up stagger-2 space-y-2">
       <p v-if="metricsError" class="text-xs text-warning">
         Metrics unavailable — retrying every 3s. Route data may be stale.
       </p>
       <Table>
+        <colgroup>
+          <col class="w-[12%]" />
+          <col class="w-[4.5rem]" />
+          <col class="w-[12%]" />
+          <col />
+          <col class="w-[10%]" />
+          <col class="w-[7%]" />
+          <col class="w-[7%]" />
+          <col class="w-[7%]" />
+          <col class="w-[9%]" />
+          <!-- 2× size-sm icon buttons + cell padding — same right inset as Transports. -->
+          <col class="w-[6.5rem]" />
+        </colgroup>
         <THead>
           <tr>
             <Th>Name</Th>
@@ -344,7 +354,7 @@ function goDetail(name: string): void {
             <Td>
               <RouterLink
                 :to="{ name: 'route-detail', params: { name: row.route.name } }"
-                class="font-medium text-fg transition-colors duration-150 hover:text-accent"
+                class="block truncate font-medium text-fg transition-colors duration-150 hover:text-accent"
                 @click.stop
               >
                 {{ row.route.name }}
@@ -359,11 +369,11 @@ function goDetail(name: string): void {
               />
             </Td>
             <Td>
-              <span class="font-mono text-xs text-fg">{{ row.route.prefix }}</span>
+              <span class="block truncate font-mono text-xs text-fg">{{ row.route.prefix }}</span>
             </Td>
-            <Td class="max-w-[260px]">
+            <Td>
               <Tooltip :text="row.route.target">
-                <span class="block max-w-[240px] truncate font-mono text-xs text-fg-secondary">
+                <span class="block truncate font-mono text-xs text-fg-secondary">
                   {{ row.route.target }}
                 </span>
               </Tooltip>
@@ -377,26 +387,26 @@ function goDetail(name: string): void {
               </Badge>
             </Td>
             <Td>
-              <span class="block text-right font-mono text-xs tabular-nums text-fg-secondary">
+              <span class="block truncate text-right font-mono text-xs tabular-nums text-fg-secondary">
                 {{ row.requests }}
               </span>
             </Td>
             <Td>
               <span
-                class="block text-right font-mono text-xs tabular-nums"
+                class="block truncate text-right font-mono text-xs tabular-nums"
                 :class="row.errorRateClass"
               >
                 {{ row.errorRateText }}
               </span>
             </Td>
             <Td>
-              <span class="block text-right font-mono text-xs tabular-nums text-fg-secondary">
+              <span class="block truncate text-right font-mono text-xs tabular-nums text-fg-secondary">
                 {{ row.p95 }}
               </span>
             </Td>
             <Td>
               <Tooltip v-if="row.lastAbs" :text="row.lastAbs">
-                <span class="text-xs text-fg-secondary">{{ row.lastRel }}</span>
+                <span class="block truncate text-xs text-fg-secondary">{{ row.lastRel }}</span>
               </Tooltip>
               <span v-else class="text-xs text-fg-muted">—</span>
             </Td>

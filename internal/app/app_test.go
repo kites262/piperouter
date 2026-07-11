@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kites262/piperouter/internal/config"
+	"github.com/kites262/piperouter/internal/webui"
 )
 
 // newBackend starts an upstream test server that reports the path it saw.
@@ -145,6 +146,14 @@ func TestStartServesProxyAdminAndWebUI(t *testing.T) {
 
 	t.Run("webui served at admin root with no-cache", func(t *testing.T) {
 		resp, body := get(t, "http://"+a.AdminAddr()+"/")
+		if !webui.Available() {
+			// dist/ is gitignored; without `make frontend` only .gitkeep is
+			// embedded and the admin plane does not mount the SPA.
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404 when WebUI is not embedded", resp.StatusCode)
+			}
+			return
+		}
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200", resp.StatusCode)
 		}

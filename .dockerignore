@@ -9,7 +9,8 @@
 dist/
 web/dist/
 web/node_modules/
-# The embedded UI is produced by the frontend stage, never taken from the host.
+# Host embed dir is ignored; the frontend stage Vite-builds into
+# /src/internal/webui/dist and the backend stage copies that tree in.
 internal/webui/dist/
 
 # Local runtime files.

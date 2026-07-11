@@ -15,13 +15,14 @@ const props = withDefaults(
 )
 
 const variants = {
-  // Accent button carries a faint top-down sheen + elevation for a machined,
-  // pressable feel; the base class adds the press (active) micro-interaction.
+  // Accent button: specular sheen + soft glow on hover.
   default:
-    'bg-accent text-white hover:bg-accent-hover elevate [background-image:linear-gradient(180deg,rgb(255_255_255_/_0.14),transparent_55%)]',
-  outline: 'border border-border-strong bg-surface/40 text-fg hover:border-border hover:bg-surface-raised',
+    'bg-accent text-white hover:bg-accent-hover elevate shadow-[0_0_0_0_transparent] hover:shadow-[0_0_24px_-6px_rgb(109_124_255_/_0.55)] [background-image:linear-gradient(180deg,rgb(255_255_255_/_0.18),transparent_55%)]',
+  outline:
+    'border border-border-strong bg-surface/40 text-fg backdrop-blur-sm hover:border-accent/40 hover:bg-surface-raised hover:text-fg',
   ghost: 'text-fg-secondary hover:bg-surface-raised hover:text-fg',
-  danger: 'border border-danger/30 bg-danger/15 text-danger hover:bg-danger/25',
+  danger:
+    'border border-danger/30 bg-danger/15 text-danger hover:bg-danger/25 hover:border-danger/45',
 } as const
 
 const sizes = {
@@ -38,7 +39,7 @@ const classes = computed(() => [variants[props.variant], sizes[props.size]])
   <button
     :type="type"
     :disabled="disabled || loading"
-    class="inline-flex select-none items-center justify-center whitespace-nowrap rounded-md font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-px disabled:pointer-events-none disabled:opacity-50"
+    class="inline-flex select-none items-center justify-center whitespace-nowrap rounded-md font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-px active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
     :class="classes"
   >
     <Spinner v-if="loading" size="sm" />

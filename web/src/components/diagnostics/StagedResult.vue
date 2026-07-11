@@ -1,7 +1,5 @@
-<!-- Shared staged diagnostics result (PRD §19.7, §16.1).
-     Vertical stage list: Route Resolution → Target URL → Transport Selection →
-     Connection → TLS (https only) → HTTP Response → Duration.
-     error_stage marks the failed stage; stages after it render "−". -->
+<!-- Shared staged diagnostics result.
+     Vertical stage list with staggered enter + glass shell. -->
 <script setup lang="ts">
 import { Check, Info, Minus, X } from 'lucide-vue-next'
 import { computed } from 'vue'
@@ -17,32 +15,19 @@ interface Stage {
   key: string
   label: string
   state: StageState
-  /** Monospace value line (target URL, transport name, durations). */
   value?: string
-  /** Secondary human-readable note. */
   note?: string
-  /** Sanitized error message — shown on the failed stage only. */
   error?: string
-  /** HTTP status rendered as a badge (HTTP Response stage). */
   status?: number
-  /** Connectivity hint (§16.1: 401/403/404 still means the link works). */
   hint?: string
 }
 
-/**
- * Backend error stages mapped to UI stage groups, in pipeline order. The
- * backend's "resolve" stage means the probe request could not be BUILT
- * (bad route/transport/path/method) with no network activity, so it maps to
- * Route Resolution (-1), before any network stage — NOT to Connection.
- * connect → Connection (0), tls → TLS (1), response → HTTP Response (2).
- */
 const FAIL_GROUPS: Record<string, number> = { resolve: -1, connect: 0, tls: 1, response: 2 }
 
 const result = computed(() => props.run.result)
 
 const targetUrl = computed(() => {
   if (result.value.target_url !== '') return result.value.target_url
-  // Defensive fallback: a transport test always targets the entered URL.
   return props.run.kind === 'transport' ? props.run.input : ''
 })
 
@@ -57,9 +42,6 @@ const stages = computed<Stage[]>(() => {
 
   const list: Stage[] = []
 
-  // 1. Route Resolution — this is where a "resolve"-stage failure surfaces
-  //    (the probe request could not be built: bad path/method/rewrite). A
-  //    successful build means the route matched and was rewritten.
   if (props.run.kind === 'route') {
     const resolveFailed = r.error_stage === 'resolve'
     list.push({
@@ -79,7 +61,6 @@ const stages = computed<Stage[]>(() => {
     })
   }
 
-  // 2. Target URL
   list.push({
     key: 'target',
     label: 'Target URL',
@@ -87,7 +68,6 @@ const stages = computed<Stage[]>(() => {
     value: targetUrl.value !== '' ? targetUrl.value : undefined,
   })
 
-  // 3. Transport Selection
   list.push({
     key: 'transport',
     label: 'Transport Selection',
@@ -95,7 +75,6 @@ const stages = computed<Stage[]>(() => {
     value: r.transport !== '' ? r.transport : undefined,
   })
 
-  // 4. Connection (DNS resolution + dial through the transport chain)
   const connState = net(0)
   list.push({
     key: 'connect',
@@ -105,7 +84,6 @@ const stages = computed<Stage[]>(() => {
     error: connState === 'fail' ? r.error : undefined,
   })
 
-  // 5. TLS — only shown for https targets.
   if (isHttps.value) {
     const tlsState = net(1)
     list.push({
@@ -117,7 +95,6 @@ const stages = computed<Stage[]>(() => {
     })
   }
 
-  // 6. HTTP Response
   const respState = net(2)
   list.push({
     key: 'response',
@@ -132,7 +109,6 @@ const stages = computed<Stage[]>(() => {
         : undefined,
   })
 
-  // 7. Duration — informational; the total is measured even on failure.
   list.push({
     key: 'duration',
     label: 'Duration',
@@ -147,14 +123,20 @@ const stages = computed<Stage[]>(() => {
 })
 
 const iconClasses: Record<StageState, string> = {
-  ok: 'border-success/40 bg-success-soft text-success',
-  fail: 'border-danger/40 bg-danger-soft text-danger',
+  ok: 'border-success/40 bg-success-soft text-success shadow-[0_0_12px_-4px_rgb(52_211_153_/_0.45)]',
+  fail: 'border-danger/40 bg-danger-soft text-danger shadow-[0_0_12px_-4px_rgb(248_113_113_/_0.45)]',
   skip: 'border-border bg-surface-raised text-fg-muted',
+}
+
+const lineClasses: Record<StageState, string> = {
+  ok: 'bg-gradient-to-b from-success/50 to-border',
+  fail: 'bg-danger/40',
+  skip: 'bg-border',
 }
 </script>
 
 <template>
-  <article class="card-flat p-4">
+  <article class="glass-panel animate-fade-scale p-4">
     <header class="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
       <div class="flex min-w-0 flex-wrap items-center gap-2">
         <Badge :variant="run.kind === 'route' ? 'accent' : 'default'">
@@ -179,13 +161,14 @@ const iconClasses: Record<StageState, string> = {
     <ol class="mt-4">
       <li
         v-for="(stage, i) in stages"
-        :key="stage.key"
-        class="relative flex gap-3"
+        :key="`${run.id}-${stage.key}`"
+        class="relative flex gap-3 animate-stage-in"
         :class="i < stages.length - 1 ? 'pb-5' : ''"
+        :style="{ animationDelay: `${i * 55}ms` }"
       >
         <div class="flex flex-col items-center self-stretch">
           <span
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border"
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-shadow duration-200"
             :class="iconClasses[stage.state]"
             :aria-label="stage.state === 'ok' ? 'passed' : stage.state === 'fail' ? 'failed' : 'skipped'"
           >
@@ -196,7 +179,7 @@ const iconClasses: Record<StageState, string> = {
           <span
             v-if="i < stages.length - 1"
             class="mt-1 w-px flex-1"
-            :class="stage.state === 'fail' ? 'bg-danger/40' : 'bg-border'"
+            :class="lineClasses[stage.state]"
             aria-hidden="true"
           />
         </div>

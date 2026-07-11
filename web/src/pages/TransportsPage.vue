@@ -202,9 +202,9 @@ async function confirmDelete(): Promise<void> {
 
 <template>
   <section class="space-y-6">
-    <div class="flex items-start justify-between gap-4">
+    <div class="flex items-start justify-between gap-4 animate-fade-up">
       <div>
-        <h1 class="text-lg font-semibold text-fg">Transports</h1>
+        <h1 class="text-lg font-semibold tracking-tight text-fg">Transports</h1>
         <p class="mt-1 text-sm text-fg-muted">
           Outbound links: built-in direct, HTTP proxy and SOCKS5 proxy.
         </p>
@@ -215,18 +215,16 @@ async function confirmDelete(): Promise<void> {
       </Button>
     </div>
 
-    <!-- Loading skeleton -->
-    <div v-if="transports === null && loadError === ''" class="card-flat p-4" aria-busy="true">
+    <div v-if="transports === null && loadError === ''" class="glass-panel p-4" aria-busy="true">
       <div class="animate-pulse space-y-3">
         <div class="h-4 w-1/3 rounded bg-surface-raised" />
         <div v-for="i in 4" :key="i" class="h-9 rounded bg-surface-raised/70" />
       </div>
     </div>
 
-    <!-- Load error -->
     <div
       v-else-if="transports === null"
-      class="card-flat flex flex-col items-center gap-3 px-6 py-12 text-center"
+      class="glass-panel flex flex-col items-center gap-3 px-6 py-12 text-center"
     >
       <p class="text-sm font-medium text-danger">Failed to load transports</p>
       <p class="max-w-md break-all font-mono text-xs text-fg-muted">{{ loadError }}</p>
@@ -249,12 +247,20 @@ async function confirmDelete(): Promise<void> {
       </Button>
     </EmptyState>
 
-    <!-- Table -->
-    <div v-else class="space-y-2">
+    <div v-else class="animate-fade-up stagger-2 space-y-2">
       <p v-if="stale" class="text-xs text-warning">
         Refresh failed — showing the last loaded data, retrying every 5s.
       </p>
       <Table>
+        <colgroup>
+          <col class="w-[18%]" />
+          <col class="w-[10%]" />
+          <col />
+          <col class="w-[14%]" />
+          <col class="w-[14%]" />
+          <!-- Room for 3× size-sm icon buttons + cell padding (match Routes edge inset). -->
+          <col class="w-[9.5rem]" />
+        </colgroup>
         <THead>
           <tr>
             <Th>Name</Th>
@@ -268,28 +274,27 @@ async function confirmDelete(): Promise<void> {
         <TBody>
           <Tr v-for="row in rows" :key="row.transport.name">
             <Td>
-              <div class="flex items-center gap-2">
-                <span class="font-medium text-fg">{{ row.transport.name }}</span>
-                <Badge v-if="row.isDirect" variant="muted">built-in</Badge>
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="truncate font-medium text-fg">{{ row.transport.name }}</span>
+                <Badge v-if="row.isDirect" variant="muted" class="shrink-0">built-in</Badge>
               </div>
             </Td>
             <Td>
               <Badge :variant="row.typeVariant" mono>{{ row.transport.type }}</Badge>
             </Td>
-            <Td class="max-w-[280px]">
-              <Tooltip v-if="row.endpoint !== '' && row.endpoint.length > 40" :text="row.endpoint">
-                <span class="block max-w-[260px] truncate font-mono text-xs text-fg-secondary">
+            <Td>
+              <Tooltip v-if="row.endpoint !== ''" :text="row.endpoint">
+                <span class="block truncate font-mono text-xs text-fg-secondary">
                   {{ row.endpoint }}
                 </span>
               </Tooltip>
-              <span v-else-if="row.endpoint !== ''" class="font-mono text-xs text-fg-secondary">
-                {{ row.endpoint }}
-              </span>
               <span v-else class="text-xs text-fg-muted">—</span>
             </Td>
             <Td>
               <Tooltip v-if="row.refs.length > 0" :text="refsTooltip(row.refs)">
-                <span class="text-xs tabular-nums text-fg-secondary underline decoration-border-strong decoration-dotted underline-offset-4">
+                <span
+                  class="text-xs tabular-nums text-fg-secondary underline decoration-border-strong decoration-dotted underline-offset-4"
+                >
                   {{ row.refs.length }} route{{ row.refs.length === 1 ? '' : 's' }}
                 </span>
               </Tooltip>
@@ -305,6 +310,7 @@ async function confirmDelete(): Promise<void> {
               <Badge v-else variant="muted">untested</Badge>
             </Td>
             <Td>
+              <!-- Same action chrome as Routes: size-sm ghost buttons, flex end, gap-1. -->
               <div class="flex items-center justify-end gap-1">
                 <Button
                   variant="ghost"
@@ -315,7 +321,12 @@ async function confirmDelete(): Promise<void> {
                   <FlaskConical class="h-3.5 w-3.5" />
                 </Button>
                 <Tooltip v-if="row.isDirect" text="Built-in transport — read-only">
-                  <Button variant="ghost" size="sm" disabled aria-label="Edit transport (disabled)">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled
+                    aria-label="Edit transport (disabled)"
+                  >
                     <Pencil class="h-3.5 w-3.5" />
                   </Button>
                 </Tooltip>
@@ -329,7 +340,12 @@ async function confirmDelete(): Promise<void> {
                   <Pencil class="h-3.5 w-3.5" />
                 </Button>
                 <Tooltip v-if="row.isDirect" text="Built-in transport — cannot be deleted">
-                  <Button variant="ghost" size="sm" disabled aria-label="Delete transport (disabled)">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled
+                    aria-label="Delete transport (disabled)"
+                  >
                     <Trash2 class="h-3.5 w-3.5" />
                   </Button>
                 </Tooltip>

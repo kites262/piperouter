@@ -224,10 +224,21 @@ CLI flags take precedence over the file and are never written back.
 ## 🧪 Development
 
 ```bash
-make build      # full release: frontend → embed → go test -race → dist/piperouter
-make test       # go test -race ./...
-make run        # build backend, run with configs/example.yaml
+make build      # full release: Vite → internal/webui/dist → go test -race → dist/piperouter
+make frontend   # Vite-build the WebUI straight into the Go embed directory
+make test       # ensure-embed + go test -race ./...
+make run        # backend only (run `make frontend` first for a current UI)
 make generate   # regenerate the OpenAPI TypeScript client from api/openapi.yaml
+```
+
+The WebUI is embedded with a single pipeline — no content-hash patching, no
+manual copy step. `internal/webui/dist/` is fully gitignored; `make ensure-embed`
+(seeded by `make test` / `make backend`) only adds a throwaway `.gitkeep` when
+no UI has been built yet so `//go:embed` always has a file:
+
+```text
+web/  ── vite build ──▶  internal/webui/dist/  ── go:embed ──▶  binary
+                         (assets/app.js + app.css, stable names)
 ```
 
 Frontend work — run the backend and the Vite dev server side by side (the dev server proxies `/api`

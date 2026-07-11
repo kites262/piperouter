@@ -254,8 +254,7 @@ function statusVariant(status: number): 'success' | 'accent' | 'warning' | 'dang
 
 <template>
   <section class="space-y-6">
-    <!-- Header -->
-    <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="flex flex-wrap items-start justify-between gap-4 animate-fade-up">
       <div class="min-w-0">
         <RouterLink
           to="/routes"
@@ -265,7 +264,7 @@ function statusVariant(status: number): 'success' | 'accent' | 'warning' | 'dang
           Routes
         </RouterLink>
         <div class="mt-1 flex flex-wrap items-center gap-3">
-          <h1 class="truncate font-mono text-lg font-semibold text-fg">{{ name }}</h1>
+          <h1 class="truncate font-mono text-lg font-semibold tracking-tight text-fg">{{ name }}</h1>
           <Badge v-if="routeCfg" :variant="routeCfg.enabled ? 'success' : 'muted'">
             {{ routeCfg.enabled ? 'enabled' : 'disabled' }}
           </Badge>
@@ -278,12 +277,11 @@ function statusVariant(status: number): 'success' | 'accent' | 'warning' | 'dang
       </Button>
     </div>
 
-    <!-- Loading skeleton -->
     <div v-if="loading" class="space-y-6" aria-busy="true">
-      <div class="card-flat h-28 animate-pulse" />
-      <div class="card-flat h-40 animate-pulse" />
+      <div class="glass-panel h-28 animate-pulse" />
+      <div class="glass-panel h-40 animate-pulse" />
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <div v-for="i in 6" :key="i" class="card-flat h-[4.5rem] animate-pulse" />
+        <div v-for="i in 6" :key="i" class="glass-panel h-[4.5rem] animate-pulse" />
       </div>
       <div class="card-flat h-64 animate-pulse" />
     </div>
@@ -304,10 +302,9 @@ function statusVariant(status: number): 'success' | 'accent' | 'warning' | 'dang
       </RouterLink>
     </EmptyState>
 
-    <!-- Load error -->
     <div
       v-else-if="loadError"
-      class="card-flat flex flex-wrap items-center justify-between gap-3 border-danger/30 px-4 py-3"
+      class="glass-panel flex flex-wrap items-center justify-between gap-3 border-danger/30 px-4 py-3"
     >
       <p class="text-sm text-danger">Failed to load route: {{ loadError }}</p>
       <Button variant="outline" size="sm" @click="initialize">
@@ -317,13 +314,11 @@ function statusVariant(status: number): 'success' | 'accent' | 'warning' | 'dang
     </div>
 
     <template v-else-if="routeCfg">
-      <!-- Pipeline -->
-      <Card title="Pipeline">
+      <Card glass animate title="Pipeline">
         <PipelineViz :route="routeCfg" :transport-type="transportType || undefined" />
       </Card>
 
-      <!-- Configuration summary (read-only) -->
-      <Card title="Configuration">
+      <Card glass class="animate-fade-up stagger-2" title="Configuration">
         <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <div v-for="field in configFields" :key="field.label">
             <dt class="text-xs font-medium uppercase tracking-wide text-fg-muted">{{ field.label }}</dt>
@@ -337,10 +332,9 @@ function statusVariant(status: number): 'success' | 'accent' | 'warning' | 'dang
         </p>
       </Card>
 
-      <!-- Live metrics -->
-      <section>
+      <section class="animate-fade-up stagger-3">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-sm font-semibold text-fg">Live metrics</h2>
+          <h2 class="text-sm font-semibold tracking-tight text-fg">Live metrics</h2>
           <span v-if="metricsError" class="text-xs text-danger">{{ metricsError }}</span>
           <span v-else-if="metrics?.last_request_at" class="font-mono text-xs text-fg-muted">
             last request {{ fmtDateTime(metrics.last_request_at) }}
@@ -348,15 +342,18 @@ function statusVariant(status: number): 'success' | 'accent' | 'warning' | 'dang
           <span v-else-if="metrics" class="font-mono text-xs text-fg-muted">no requests yet</span>
         </div>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          <div v-for="stat in stats" :key="stat.label" class="card-flat px-4 py-3">
+          <div
+            v-for="stat in stats"
+            :key="stat.label"
+            class="glass-panel card-lift px-4 py-3"
+          >
             <p class="text-[11px] font-medium uppercase tracking-wide text-fg-muted">{{ stat.label }}</p>
-            <p class="mt-1 truncate font-mono text-lg" :class="stat.tone">{{ stat.value }}</p>
+            <p class="mt-1 truncate font-mono text-lg tnums" :class="stat.tone">{{ stat.value }}</p>
           </div>
         </div>
       </section>
 
-      <!-- Status class breakdown -->
-      <Card title="Status class breakdown">
+      <Card class="animate-fade-up stagger-4" title="Status class breakdown">
         <div v-if="metrics === null" class="space-y-3" aria-busy="true">
           <div v-for="i in 5" :key="i" class="h-4 animate-pulse rounded bg-surface-raised/70" />
         </div>

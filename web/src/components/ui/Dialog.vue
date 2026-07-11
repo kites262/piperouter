@@ -83,7 +83,7 @@ onBeforeUnmount(() => {
     <Transition name="dialog">
       <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          class="absolute inset-0 bg-black/55 backdrop-blur-md backdrop-saturate-150"
+          class="absolute inset-0 bg-black/60 backdrop-blur-md backdrop-saturate-150"
           aria-hidden="true"
           @click="close"
         />
@@ -92,28 +92,39 @@ onBeforeUnmount(() => {
           role="dialog"
           aria-modal="true"
           tabindex="-1"
-          class="glass-panel relative max-h-[85vh] w-full overflow-y-auto p-5 focus:outline-none"
+          class="glass-panel relative max-h-[85vh] w-full focus:outline-none"
           :class="maxWidth"
         >
-          <header v-if="title || description || $slots.header" class="mb-4 flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <h2 v-if="title" class="text-base font-semibold text-fg">{{ title }}</h2>
-              <p v-if="description" class="mt-1 text-sm text-fg-muted">{{ description }}</p>
-              <slot name="header" />
-            </div>
-            <button
-              type="button"
-              class="rounded-md p-1 text-fg-muted transition-colors duration-150 hover:bg-surface-raised hover:text-fg"
-              aria-label="Close dialog"
-              @click="close"
+          <span
+            class="pointer-events-none absolute inset-y-0 left-0 z-[3] w-1/2 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-sheen-once"
+            aria-hidden="true"
+          />
+          <div class="relative z-[2] max-h-[85vh] overflow-y-auto p-5">
+            <header
+              v-if="title || description || $slots.header"
+              class="mb-4 flex items-start justify-between gap-4"
             >
-              <X class="h-4 w-4" />
-            </button>
-          </header>
-          <slot />
-          <footer v-if="$slots.footer" class="mt-5 flex items-center justify-end gap-2">
-            <slot name="footer" />
-          </footer>
+              <div class="min-w-0">
+                <h2 v-if="title" class="text-base font-semibold tracking-tight text-fg">
+                  {{ title }}
+                </h2>
+                <p v-if="description" class="mt-1 text-sm text-fg-muted">{{ description }}</p>
+                <slot name="header" />
+              </div>
+              <button
+                type="button"
+                class="rounded-md p-1 text-fg-muted transition-colors duration-150 hover:bg-surface-raised hover:text-fg"
+                aria-label="Close dialog"
+                @click="close"
+              >
+                <X class="h-4 w-4" />
+              </button>
+            </header>
+            <slot />
+            <footer v-if="$slots.footer" class="mt-5 flex items-center justify-end gap-2">
+              <slot name="footer" />
+            </footer>
+          </div>
         </div>
       </div>
     </Transition>

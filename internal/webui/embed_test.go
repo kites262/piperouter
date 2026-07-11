@@ -8,14 +8,16 @@ import (
 	"testing"
 )
 
-// The tests run against the real embedded dist/. In a source checkout that
-// is the committed placeholder index.html; after `make embed` it is the full
-// frontend build. Assertions therefore target contract behavior (status,
-// cache headers, fallback) rather than specific file contents.
+// Tests run against whatever is currently embedded in dist/:
+//   - after `make ensure-embed` only: dist/.gitkeep → Available() false
+//   - after `make frontend`: full Vite build → Available() true
+// Assertions adapt so both modes pass.
 
 func TestAvailable(t *testing.T) {
-	if !Available() {
-		t.Fatal("Available() = false; the committed placeholder dist/index.html must make the UI available")
+	_, err := fs.Stat(distFS, distRoot+"/index.html")
+	want := err == nil
+	if Available() != want {
+		t.Fatalf("Available() = %v, want %v (index.html present=%v)", Available(), want, want)
 	}
 }
 
@@ -29,6 +31,20 @@ func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 
 func TestHandler(t *testing.T) {
 	h := Handler()
+
+	if !Available() {
+		// Compile-only embed (.gitkeep): no SPA shell — index routes 404,
+		// missing assets still 404, and we never mount this handler in app
+		// when Available() is false.
+		if rec := get(t, h, "/"); rec.Code != http.StatusNotFound {
+			t.Fatalf("GET / without UI status = %d, want 404", rec.Code)
+		}
+		if rec := get(t, h, "/assets/nope.js"); rec.Code != http.StatusNotFound {
+			t.Fatalf("GET missing asset status = %d, want 404", rec.Code)
+		}
+		// .gitkeep itself is embed fodder, not a public route of interest.
+		return
+	}
 
 	indexBody := get(t, h, "/").Body.String()
 	if indexBody == "" {
@@ -76,16 +92,11 @@ func TestHandler(t *testing.T) {
 			wantBody:     indexBody,
 		},
 		{
-			// Only missing ASSETS (under assets/) 404; other dotted paths
-			// are SPA deep links and must get the shell.
 			name:       "missing asset with extension is 404",
 			path:       "/assets/nope-12345.js",
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			// A route name may contain a dot (config.NamePattern), so its
-			// detail deep link ends in ".something"; it must serve the SPA
-			// shell, not 404 (regression: dotted SPA routes 404'd before).
 			name:         "SPA deep link with a dotted last segment",
 			path:         "/routes/api.v1",
 			wantStatus:   http.StatusOK,
@@ -94,8 +105,6 @@ func TestHandler(t *testing.T) {
 			wantBody:     indexBody,
 		},
 		{
-			// The cleaned path stays inside the embedded root; a
-			// traversal attempt gets the SPA shell, never a real file.
 			name:         "dot-dot cannot escape the embedded root",
 			path:         "/../../etc/passwd",
 			wantStatus:   http.StatusOK,
@@ -128,18 +137,34 @@ func TestHandler(t *testing.T) {
 	}
 }
 
-// TestAssetCacheHeaders asserts the immutable cache policy for every real
-// file under assets/ in the embed. With only the placeholder committed there
-// are no assets and the loop body simply never runs (the 404-for-missing-
-// asset case is covered in TestHandler).
+// TestAssetCacheHeaders asserts no-cache for every real file under assets/
+// (stable names, binary is the version unit). Skips when no assets embedded.
 func TestAssetCacheHeaders(t *testing.T) {
 	h := Handler()
 	entries, err := fs.ReadDir(distFS, distRoot+"/assets")
 	if err != nil {
-		t.Skip("no embedded assets directory (placeholder build)")
+		t.Skip("no embedded assets directory (run `make frontend` for a full embed)")
 	}
 	for _, e := range entries {
 		if e.IsDir() {
+			sub, err := fs.ReadDir(distFS, distRoot+"/assets/"+e.Name())
+			if err != nil {
+				continue
+			}
+			for _, child := range sub {
+				if child.IsDir() {
+					continue
+				}
+				path := "/assets/" + e.Name() + "/" + child.Name()
+				rec := get(t, h, path)
+				if rec.Code != http.StatusOK {
+					t.Errorf("GET %s status = %d, want 200", path, rec.Code)
+					continue
+				}
+				if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+					t.Errorf("GET %s Cache-Control = %q, want no-cache", path, got)
+				}
+			}
 			continue
 		}
 		rec := get(t, h, "/assets/"+e.Name())
@@ -147,9 +172,30 @@ func TestAssetCacheHeaders(t *testing.T) {
 			t.Errorf("GET /assets/%s status = %d, want 200", e.Name(), rec.Code)
 			continue
 		}
-		const want = "public, max-age=31536000, immutable"
-		if got := rec.Header().Get("Cache-Control"); got != want {
-			t.Errorf("GET /assets/%s Cache-Control = %q, want %q", e.Name(), got, want)
+		if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("GET /assets/%s Cache-Control = %q, want no-cache", e.Name(), got)
+		}
+	}
+}
+
+// TestStableAssetNames documents the production embed contract: after a real
+// frontend build, the shell must reference the stable entrypoints.
+func TestStableAssetNames(t *testing.T) {
+	if !Available() {
+		t.Skip("no embedded UI — run `make frontend` for a full embed")
+	}
+	body := get(t, Handler(), "/").Body.String()
+	if !strings.Contains(body, "/assets/app.js") {
+		t.Errorf("index.html must reference /assets/app.js; got shell without stable entry")
+	}
+	if !strings.Contains(body, "/assets/app.css") && !strings.Contains(body, "assets/app.css") {
+		t.Errorf("index.html must reference assets/app.css; got shell without stable stylesheet")
+	}
+	for _, part := range strings.FieldsFunc(body, func(r rune) bool {
+		return r == '"' || r == '\'' || r == ' ' || r == '>' || r == '<'
+	}) {
+		if strings.HasPrefix(part, "/assets/index-") || strings.Contains(part, "assets/index-") {
+			t.Errorf("hashed entry asset leaked into index.html: %s", part)
 		}
 	}
 }
