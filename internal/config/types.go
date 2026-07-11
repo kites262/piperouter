@@ -129,16 +129,24 @@ const (
 
 // RouteConfig declares one prefix→target mapping (PRD §5.1).
 type RouteConfig struct {
-	Name        string `yaml:"name" json:"name"`
-	Enabled     *bool  `yaml:"enabled" json:"enabled"`
-	Prefix      string `yaml:"prefix" json:"prefix"`
-	Target      string `yaml:"target" json:"target"`
-	StripPrefix *bool  `yaml:"strip_prefix" json:"strip_prefix"`
-	Transport   string `yaml:"transport" json:"transport"`
+	Name    string `yaml:"name" json:"name"`
+	Enabled *bool  `yaml:"enabled" json:"enabled"`
+	Prefix  string `yaml:"prefix" json:"prefix"`
+	Target  string `yaml:"target" json:"target"`
+	// StripForwardHeaders removes proxy metadata request headers (Forwarded,
+	// Via, X-Forwarded-For/-Host/-Proto) before forwarding, so a fronting
+	// reverse proxy never leaks client details to the target. Default true;
+	// set false to pass inbound values through unchanged.
+	StripForwardHeaders *bool  `yaml:"strip_forward_headers" json:"strip_forward_headers"`
+	StripPrefix         *bool  `yaml:"strip_prefix" json:"strip_prefix"`
+	Transport           string `yaml:"transport" json:"transport"`
 }
 
-func (r RouteConfig) IsEnabled() bool       { return r.Enabled == nil || *r.Enabled }
-func (r RouteConfig) StripsPrefix() bool    { return r.StripPrefix == nil || *r.StripPrefix }
+func (r RouteConfig) IsEnabled() bool    { return r.Enabled == nil || *r.Enabled }
+func (r RouteConfig) StripsPrefix() bool { return r.StripPrefix == nil || *r.StripPrefix }
+func (r RouteConfig) StripsForwardHeaders() bool {
+	return r.StripForwardHeaders == nil || *r.StripForwardHeaders
+}
 func (a AdminServerConfig) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
 func (w WebConfig) IsEnabled() bool         { return w.Enabled == nil || *w.Enabled }
 
@@ -193,6 +201,9 @@ func (c *Config) Normalize() {
 		if c.Routes[i].StripPrefix == nil {
 			c.Routes[i].StripPrefix = boolPtr(true)
 		}
+		if c.Routes[i].StripForwardHeaders == nil {
+			c.Routes[i].StripForwardHeaders = boolPtr(true)
+		}
 		if c.Routes[i].Transport == "" {
 			c.Routes[i].Transport = DirectName
 		}
@@ -223,6 +234,9 @@ func (c *Config) Clone() *Config {
 		}
 		if r.StripPrefix != nil {
 			r.StripPrefix = boolPtr(*r.StripPrefix)
+		}
+		if r.StripForwardHeaders != nil {
+			r.StripForwardHeaders = boolPtr(*r.StripForwardHeaders)
 		}
 		out.Routes[i] = r
 	}

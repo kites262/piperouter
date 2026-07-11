@@ -245,8 +245,17 @@ func TestWSOutboundHeader(t *testing.T) {
 	in.Set("Sec-WebSocket-Protocol", "chat")
 	in.Set("Origin", "http://client.test/")
 	in.Set("Authorization", "Bearer tok")
+	in.Set("X-Forwarded-For", "1.2.3.4")
+	in.Set("Via", "1.1 caddy")
 
-	out := wsOutboundHeader(in)
+	out := wsOutboundHeader(in, false)
+
+	// stripForward off: proxy metadata passes through unchanged.
+	for _, k := range []string{"X-Forwarded-For", "Via"} {
+		if _, ok := out[k]; !ok {
+			t.Errorf("%s was stripped with stripForward off", k)
+		}
+	}
 
 	// Hop-by-hop gone, even the Connection-listed X-Hop.
 	for _, k := range []string{"X-Hop", "Keep-Alive", "Proxy-Authorization", "Transfer-Encoding"} {
@@ -277,8 +286,23 @@ func TestWSOutboundHeader(t *testing.T) {
 
 	// A client-supplied User-Agent passes through untouched.
 	in.Set("User-Agent", "custom/1.0")
-	if got := wsOutboundHeader(in).Get("User-Agent"); got != "custom/1.0" {
+	if got := wsOutboundHeader(in, false).Get("User-Agent"); got != "custom/1.0" {
 		t.Errorf("User-Agent = %q, want custom/1.0", got)
+	}
+
+	// stripForward on (the default): every proxy-metadata header is removed,
+	// end-to-end headers still pass.
+	in.Set("Forwarded", "for=1.2.3.4")
+	in.Set("X-Forwarded-Host", "public.example.com")
+	in.Set("X-Forwarded-Proto", "https")
+	stripped := wsOutboundHeader(in, true)
+	for _, k := range forwardHeaders {
+		if _, ok := stripped[k]; ok {
+			t.Errorf("%s survived stripForward: %q", k, stripped[k])
+		}
+	}
+	if got := stripped.Get("Authorization"); got != "Bearer tok" {
+		t.Errorf("Authorization = %q, want Bearer tok", got)
 	}
 }
 

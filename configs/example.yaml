@@ -74,6 +74,9 @@ routes:
     prefix: /openai
     target: https://api.openai.com/v1
     strip_prefix: true
+    # Remove Forwarded/Via/X-Forwarded-* before forwarding (default true),
+    # so a fronting reverse proxy never leaks client IPs to the target.
+    strip_forward_headers: true
     transport: jp-proxy
 
   # /github/repos/... → https://api.github.com/repos/... via direct egress.

@@ -44,6 +44,15 @@ const stages = computed<Stage[]>(() => {
       title: r.strip_prefix ? 'strip_prefix: true' : 'strip_prefix: false',
     },
     {
+      key: 'headers',
+      label: 'Headers',
+      value: r.strip_forward_headers ? 'strip' : 'keep',
+      sub: r.strip_forward_headers ? 'X-Forwarded-* removed' : 'passed through',
+      title: r.strip_forward_headers
+        ? 'strip_forward_headers: true — Forwarded, Via, X-Forwarded-* removed'
+        : 'strip_forward_headers: false — inbound values pass through unchanged',
+    },
+    {
       key: 'transport',
       label: 'Transport',
       value: r.transport,

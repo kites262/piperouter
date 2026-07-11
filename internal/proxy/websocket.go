@@ -77,7 +77,7 @@ func (h *handler) serveWebSocket(rw *responseRecorder, r *http.Request, netCfg c
 		Proto:      "HTTP/1.1",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
-		Header:     wsOutboundHeader(r.Header),
+		Header:     wsOutboundHeader(r.Header, route.StripForwardHeaders),
 		Host:       target.Host,
 	}
 	// Bound the upstream handshake (request write + response read) so a
@@ -218,8 +218,9 @@ func wsHostPort(u *url.URL) string {
 // wsOutboundHeader builds the upgrade request headers: end-to-end headers
 // pass through, hop-by-hop headers (standard + Connection-listed) are
 // stripped, Sec-WebSocket-* always survive, and the Connection/Upgrade
-// pair is forced (§9.4, §10.4).
-func wsOutboundHeader(in http.Header) http.Header {
+// pair is forced (§9.4, §10.4). stripForward additionally removes the
+// proxy-metadata headers (route strip_forward_headers, default on).
+func wsOutboundHeader(in http.Header, stripForward bool) http.Header {
 	out := in.Clone()
 	for _, v := range in["Connection"] {
 		for _, name := range strings.Split(v, ",") {
@@ -232,6 +233,11 @@ func wsOutboundHeader(in http.Header) http.Header {
 	}
 	for _, k := range hopByHopHeaders {
 		out.Del(k)
+	}
+	if stripForward {
+		for _, k := range forwardHeaders {
+			out.Del(k)
+		}
 	}
 	out.Set("Connection", "Upgrade")
 	out.Set("Upgrade", "websocket")

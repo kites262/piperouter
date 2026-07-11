@@ -147,30 +147,68 @@ func TestTransparencyEndToEnd(t *testing.T) {
 	}
 }
 
-func TestInboundXForwardedForPassesThroughUnchanged(t *testing.T) {
-	up, tp, _ := newTransparencyFixture(t)
+func TestForwardHeaderStripping(t *testing.T) {
+	up := &recordingUpstream{}
+	upstream := httptest.NewServer(up.handler())
+	t.Cleanup(upstream.Close)
+	snap := buildSnapshot(t, fmt.Sprintf(`
+version: 1
+routes:
+  - name: strip
+    prefix: /strip
+    target: %s
+  - name: keep
+    prefix: /keep
+    target: %s
+    strip_forward_headers: false
+`, upstream.URL, upstream.URL))
+	tp := newTestProxy(t, snap)
 
-	req, _ := http.NewRequest(http.MethodGet, tp.server.URL+"/api/echo", nil)
-	req.Header.Set("X-Forwarded-For", "1.2.3.4")
-	req.Header.Set("X-Forwarded-Proto", "https")
-	req.Header.Set("Forwarded", "for=1.2.3.4")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
+	send := func(t *testing.T, path string) recordedRequest {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, tp.server.URL+path, nil)
+		req.Header.Set("X-Forwarded-For", "1.2.3.4")
+		req.Header.Set("X-Forwarded-Host", "public.example.com")
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.Header.Set("Forwarded", "for=1.2.3.4")
+		req.Header.Set("Via", "1.1 caddy")
+		req.Header.Set("X-Keep", "yes")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		resp.Body.Close()
+		return up.last(t)
 	}
-	resp.Body.Close()
 
-	seen := up.last(t)
-	// Pass through UNCHANGED: no client IP appended, nothing stripped.
-	if got := seen.Header["X-Forwarded-For"]; len(got) != 1 || got[0] != "1.2.3.4" {
-		t.Errorf("X-Forwarded-For = %q, want exactly [1.2.3.4]", got)
-	}
-	if got := seen.Header.Get("X-Forwarded-Proto"); got != "https" {
-		t.Errorf("X-Forwarded-Proto = %q", got)
-	}
-	if got := seen.Header.Get("Forwarded"); got != "for=1.2.3.4" {
-		t.Errorf("Forwarded = %q", got)
-	}
+	t.Run("default strips proxy metadata", func(t *testing.T) {
+		seen := send(t, "/strip/echo")
+		for _, h := range []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "Forwarded", "Via"} {
+			if _, ok := seen.Header[h]; ok {
+				t.Errorf("%s leaked to upstream: %q", h, seen.Header[h])
+			}
+		}
+		if got := seen.Header.Get("X-Keep"); got != "yes" {
+			t.Errorf("end-to-end X-Keep = %q, want yes", got)
+		}
+	})
+
+	t.Run("strip_forward_headers false passes through unchanged", func(t *testing.T) {
+		seen := send(t, "/keep/echo")
+		// Pass through UNCHANGED: no client IP appended, nothing stripped.
+		if got := seen.Header["X-Forwarded-For"]; len(got) != 1 || got[0] != "1.2.3.4" {
+			t.Errorf("X-Forwarded-For = %q, want exactly [1.2.3.4]", got)
+		}
+		if got := seen.Header.Get("X-Forwarded-Proto"); got != "https" {
+			t.Errorf("X-Forwarded-Proto = %q", got)
+		}
+		if got := seen.Header.Get("Forwarded"); got != "for=1.2.3.4" {
+			t.Errorf("Forwarded = %q", got)
+		}
+		if got := seen.Header.Get("Via"); got != "1.1 caddy" {
+			t.Errorf("Via = %q", got)
+		}
+	})
 }
 
 func TestHopByHopHeadersStripped(t *testing.T) {

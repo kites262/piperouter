@@ -80,6 +80,8 @@ export interface RouteConfig {
   enabled: boolean
   prefix: string
   target: string
+  /** Remove Forwarded/Via/X-Forwarded-* before forwarding (default true). */
+  strip_forward_headers: boolean
   strip_prefix: boolean
   transport: string
 }

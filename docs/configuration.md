@@ -61,6 +61,7 @@ routes:                         # prefix → target mappings
     prefix: /openai
     target: https://api.openai.com/v1
     strip_prefix: true
+    strip_forward_headers: true # remove Forwarded/Via/X-Forwarded-* (default)
     transport: jp-proxy
   - name: github
     prefix: /github
@@ -146,6 +147,7 @@ Values are Go duration strings. Unset or `0s` means the default.
 | `prefix` | string | yes | — | path prefix to match; unique across routes (see rules below) |
 | `target` | string | yes | — | absolute `http`/`https` URL; no query, fragment or userinfo |
 | `strip_prefix` | bool | no | `true` | remove the matched prefix before joining with the target path |
+| `strip_forward_headers` | bool | no | `true` | remove `Forwarded`, `Via` and `X-Forwarded-For/-Host/-Proto` before forwarding; `false` passes inbound values through unchanged |
 | `transport` | string | no | `"direct"` | name of a declared transport, or `direct` |
 
 ## Validation rules
@@ -250,7 +252,7 @@ What PipeRouter does **not** touch:
 Two deliberate exceptions to full transparency:
 
 - `Host` is always set to the **target's** host (there is no `preserve_host` option in v0.1).
-- PipeRouter adds **no** `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded` or `Via` headers. Whatever the client sent is passed through unchanged.
+- PipeRouter adds **no** `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded` or `Via` headers — and by default it **removes** inbound ones (`strip_forward_headers: true`), so a fronting reverse proxy such as Caddy or nginx never leaks the real client IP or your public hostname to the target. Set `strip_forward_headers: false` on a route to pass the inbound values through unchanged (useful when the target is your own service and needs the client IP).
 
 ## Error mapping
 

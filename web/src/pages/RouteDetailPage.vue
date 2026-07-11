@@ -144,6 +144,7 @@ const configFields = computed(() => {
           : r.transport,
     },
     { label: 'Strip prefix', value: r.strip_prefix ? 'true' : 'false' },
+    { label: 'Strip forward headers', value: r.strip_forward_headers ? 'true' : 'false' },
     { label: 'Enabled', value: r.enabled ? 'true' : 'false' },
   ]
 })

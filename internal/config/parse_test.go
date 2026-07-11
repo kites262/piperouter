@@ -44,6 +44,7 @@ func TestParseDefaults(t *testing.T) {
 		{"idle connection timeout", c.Network.IdleConnectionTimeout.Std(), 90 * time.Second},
 		{"route enabled", c.Routes[0].IsEnabled(), true},
 		{"route strip_prefix", c.Routes[0].StripsPrefix(), true},
+		{"route strip_forward_headers", c.Routes[0].StripsForwardHeaders(), true},
 		{"route transport", c.Routes[0].Transport, DirectName},
 	}
 	for _, tt := range tests {

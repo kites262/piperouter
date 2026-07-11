@@ -411,6 +411,11 @@ export interface components {
              */
             target: string;
             /**
+             * @description Remove proxy metadata request headers (Forwarded, Via, X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Proto) before forwarding, so the target never sees them. Set to false to pass inbound values through unchanged. PipeRouter never adds these headers either way. Defaults to true when omitted.
+             * @default true
+             */
+            strip_forward_headers: boolean | null;
+            /**
              * @description Remove the matched prefix before joining with the target base path. Defaults to true when omitted.
              * @default true
              */

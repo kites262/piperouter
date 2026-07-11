@@ -46,6 +46,7 @@ const form = reactive({
   prefix: '',
   target: '',
   stripPrefix: true,
+  stripForwardHeaders: true,
   transport: 'direct',
 })
 
@@ -73,6 +74,7 @@ watch(open, (isOpen) => {
   form.prefix = source?.prefix ?? ''
   form.target = source?.target ?? ''
   form.stripPrefix = source?.strip_prefix ?? true
+  form.stripForwardHeaders = source?.strip_forward_headers ?? true
   form.transport = source?.transport ?? 'direct'
   touched.name = false
   touched.prefix = false
@@ -152,6 +154,7 @@ async function submit(): Promise<void> {
     enabled: form.enabled,
     prefix: normalizePrefix(form.prefix),
     target: form.target.trim(),
+    strip_forward_headers: form.stripForwardHeaders,
     strip_prefix: form.stripPrefix,
     transport: form.transport,
   }
@@ -280,6 +283,17 @@ async function submit(): Promise<void> {
             <p class="text-xs text-fg-muted">Remove the prefix before forwarding.</p>
           </div>
           <Switch v-model="form.stripPrefix" />
+        </div>
+        <div
+          class="flex items-center justify-between gap-3 rounded-md border border-border bg-bg-deep/40 px-3 py-2.5 sm:col-span-2"
+        >
+          <div class="min-w-0">
+            <p class="text-sm text-fg">Strip Forward Headers</p>
+            <p class="text-xs text-fg-muted">
+              Hide client and proxy metadata (Forwarded, Via, X-Forwarded-*) from the target.
+            </p>
+          </div>
+          <Switch v-model="form.stripForwardHeaders" />
         </div>
       </div>
 

@@ -14,11 +14,12 @@ import (
 
 // Route is one compiled prefix→target mapping.
 type Route struct {
-	Name          string
-	Prefix        string   // validated: "/" or no trailing slash
-	Target        *url.URL // absolute, no query/fragment/userinfo
-	StripPrefix   bool
-	TransportName string
+	Name                string
+	Prefix              string   // validated: "/" or no trailing slash
+	Target              *url.URL // absolute, no query/fragment/userinfo
+	StripPrefix         bool
+	StripForwardHeaders bool
+	TransportName       string
 }
 
 // Table is an immutable set of enabled routes supporting longest-prefix
@@ -42,11 +43,12 @@ func BuildTable(routes []config.RouteConfig) (*Table, error) {
 			return nil, fmt.Errorf("route %q: invalid target: %w", rc.Name, err)
 		}
 		r := &Route{
-			Name:          rc.Name,
-			Prefix:        rc.Prefix,
-			Target:        target,
-			StripPrefix:   rc.StripsPrefix(),
-			TransportName: rc.Transport,
+			Name:                rc.Name,
+			Prefix:              rc.Prefix,
+			Target:              target,
+			StripPrefix:         rc.StripsPrefix(),
+			StripForwardHeaders: rc.StripsForwardHeaders(),
+			TransportName:       rc.Transport,
 		}
 		t.byLength = append(t.byLength, r)
 		t.byName = append(t.byName, r)

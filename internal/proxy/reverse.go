@@ -15,12 +15,14 @@ import (
 	"github.com/kites262/piperouter/internal/transport"
 )
 
-// forwardedHeaders are the headers httputil.ReverseProxy deletes from the
-// outbound request before calling Rewrite. PipeRouter is transparent
-// (PRD §9.3): it never ADDS them, but inbound values must pass through
-// unchanged, so Rewrite restores them from the inbound request.
-var forwardedHeaders = []string{
+// forwardHeaders are the proxy-metadata request headers governed by the
+// route's strip_forward_headers option: Forwarded/X-Forwarded-* reveal the
+// original client, Via reveals the proxy chain. Stripping (the default)
+// removes them so upstream targets never see them; keeping passes inbound
+// values through unchanged. PipeRouter never ADDS any of them (§9.3).
+var forwardHeaders = []string{
 	"Forwarded",
+	"Via",
 	"X-Forwarded-For",
 	"X-Forwarded-Host",
 	"X-Forwarded-Proto",
@@ -36,17 +38,26 @@ func (h *handler) serveReverse(rw *responseRecorder, r *http.Request, route *rou
 			// Host = target host, fixed in v0.1 (PRD §9.2). Explicit is
 			// better than relying on Host=="" falling back to URL.Host.
 			pr.Out.Host = pr.Out.URL.Host
-			// Transparency §9.3: never add X-Forwarded-*/Forwarded (so no
-			// SetXForwarded), but restore inbound values that ReverseProxy
-			// stripped before calling Rewrite — UNLESS the client declared
-			// them hop-by-hop via Connection, which §9.4 requires removing.
-			connTokens := pr.In.Header["Connection"]
-			for _, k := range forwardedHeaders {
-				if headerValuesContainToken(connTokens, k) {
-					continue
+			if route.StripForwardHeaders {
+				// ReverseProxy already deleted Forwarded/X-Forwarded-*
+				// before Rewrite; Via is ours to remove.
+				for _, k := range forwardHeaders {
+					pr.Out.Header.Del(k)
 				}
-				if vals, ok := pr.In.Header[k]; ok {
-					pr.Out.Header[k] = slices.Clone(vals)
+			} else {
+				// Transparency §9.3: never add X-Forwarded-*/Forwarded (so
+				// no SetXForwarded), but restore inbound values that
+				// ReverseProxy stripped before calling Rewrite — UNLESS the
+				// client declared them hop-by-hop via Connection, which
+				// §9.4 requires removing.
+				connTokens := pr.In.Header["Connection"]
+				for _, k := range forwardHeaders {
+					if headerValuesContainToken(connTokens, k) {
+						continue
+					}
+					if vals, ok := pr.In.Header[k]; ok {
+						pr.Out.Header[k] = slices.Clone(vals)
+					}
 				}
 			}
 		},

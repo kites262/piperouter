@@ -179,6 +179,8 @@ Caddy obtains and renews certificates automatically as long as both domains poin
 
 One subtlety when fronting the admin API: PipeRouter rejects mutating requests whose `Origin` header doesn't match the request's `Host` (its CSRF defense — there are no cookies or CORS). Caddy's `reverse_proxy` preserves the client's `Host` header by default, so the check passes. If you front it with nginx instead, keep the host intact: `proxy_set_header Host $host;`.
 
+Caddy also adds `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` to every proxied request. No Caddy-side cleanup is needed: by default PipeRouter strips `Forwarded`, `Via` and all `X-Forwarded-*` headers from data-plane requests before forwarding (`strip_forward_headers: true`), so upstream targets never see your clients' IPs or your public hostname. Set `strip_forward_headers: false` on a route whose target is your own service and should receive them.
+
 ## TLS options
 
 PipeRouter does **no ACME** — no automatic issuance or renewal. Two supported approaches:
