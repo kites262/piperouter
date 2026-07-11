@@ -10,10 +10,11 @@ piperouter.yaml
 piperouter.yaml.bak
 *.log
 
-# OS / editor
+# OS / editor / local agent state
 .DS_Store
 .idea/
 .vscode/
+.claude/
 
 # Go
 coverage.out

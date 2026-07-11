@@ -101,6 +101,8 @@ The admin server embeds a Vue 3 single-page console:
 - **Diagnostics** — send a test request through a real route or transport and see each stage: route resolution, final URL, connection, TLS, HTTP status, timing
 - **Settings** — listeners, TLS paths, log level and log-buffer capacity
 
+The console is a dark-first "infrastructure console" and ships a light theme too — toggle it from the sidebar; your choice is remembered and the first visit follows your OS preference.
+
 Everything the WebUI does goes through the JSON Admin API under `/api/v1` (spec: [`api/openapi.yaml`](api/openapi.yaml)), so you can script the same operations with `curl`.
 
 ## CLI reference
