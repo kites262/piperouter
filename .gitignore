@@ -10,6 +10,9 @@ piperouter.yaml
 piperouter.yaml.bak
 *.log
 
+# Local scratch area — internal notes, experiments (never published)
+/playground/
+
 # OS / editor / local agent state
 .DS_Store
 .idea/
