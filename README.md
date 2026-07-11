@@ -4,10 +4,11 @@
 
 **One endpoint in front of all your APIs** — matched by path, rewritten, and sent out each on its own link.
 
-[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
+[![CI](https://img.shields.io/github/actions/workflow/status/kites262/piperouter/ci.yml?branch=main&label=CI&logo=github)](https://github.com/kites262/piperouter/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kites262/piperouter?label=release&color=6d7cff)](https://github.com/kites262/piperouter/releases/latest)
+[![Go](https://img.shields.io/github/go-mod/go-version/kites262/piperouter?logo=go&logoColor=white&label=Go)](go.mod)
 [![WebUI](https://img.shields.io/badge/WebUI-Vue_3-42b883?logo=vuedotjs&logoColor=white)](web/)
-[![Release](https://img.shields.io/badge/release-v0.1.0-6d7cff)](#)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License](https://img.shields.io/github/license/kites262/piperouter?color=blue)](LICENSE)
 
 ```text
 /openai/*    →  api.openai.com/v1/*                    via jp-proxy   (HTTP)
