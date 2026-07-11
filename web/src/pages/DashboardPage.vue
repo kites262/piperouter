@@ -3,8 +3,14 @@
 import { RotateCw, ServerCrash, TriangleAlert } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
-import { ApiError, getLogs, getMetrics, getStatus, listRoutes } from '@/api/client'
-import type { AccessLogEntry, MetricsSnapshot, RouteMetrics, StatusResponse } from '@/api/types'
+import { ApiError, getLogs, getMetrics, getMetricsHistory, getStatus, listRoutes } from '@/api/client'
+import type {
+  AccessLogEntry,
+  MetricsHistoryResponse,
+  MetricsSnapshot,
+  RouteMetrics,
+  StatusResponse,
+} from '@/api/types'
 import {
   formatCount,
   formatErrorRate,
@@ -16,6 +22,7 @@ import {
 import RecentErrorsPanel from '@/components/dashboard/RecentErrorsPanel.vue'
 import RoutesOverviewTable from '@/components/dashboard/RoutesOverviewTable.vue'
 import StatCard from '@/components/dashboard/StatCard.vue'
+import TrafficHistoryChart from '@/components/dashboard/TrafficHistoryChart.vue'
 import Button from '@/components/ui/Button.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
 import { usePolling } from '@/composables/usePolling'
@@ -56,6 +63,21 @@ async function fetchAll(): Promise<void> {
 }
 
 const { refresh } = usePolling(fetchAll, { interval: 3000 })
+
+/** 24h history — hourly buckets change slowly, so it polls on its own 30s
+ * cadence. Failures keep the last series silently (the 3s poll already
+ * owns the stale-data banner). */
+const history = ref<MetricsHistoryResponse | null>(null)
+
+async function fetchHistory(): Promise<void> {
+  try {
+    history.value = await getMetricsHistory()
+  } catch {
+    // keep last known series
+  }
+}
+
+usePolling(fetchHistory, { interval: 30000 })
 
 function retry(): void {
   void refresh()
@@ -213,6 +235,11 @@ const cards = computed<StatCardModel[]>(() => {
           <Skeleton class="mt-2.5 h-3 w-28" />
         </div>
       </div>
+      <div class="glass-panel p-4" aria-hidden="true">
+        <Skeleton class="h-3 w-24" />
+        <Skeleton class="mt-3 h-[160px] w-full" />
+        <Skeleton class="mt-2 h-3 w-3/4" />
+      </div>
       <div class="grid items-start gap-6 xl:grid-cols-5">
         <div class="xl:col-span-3"><RoutesOverviewTable :routes="[]" :prefixes="{}" loading /></div>
         <div class="xl:col-span-2"><RecentErrorsPanel :entries="[]" loading /></div>
@@ -253,6 +280,8 @@ const cards = computed<StatCardModel[]>(() => {
           :format="c.format"
         />
       </div>
+
+      <TrafficHistoryChart class="animate-fade-up stagger-6" :buckets="history?.buckets ?? null" />
 
       <div class="grid items-start gap-6 xl:grid-cols-5">
         <div class="animate-fade-up stagger-7 xl:col-span-3">

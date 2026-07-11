@@ -214,6 +214,26 @@ export interface MetricsSnapshot {
   log_dropped: number
 }
 
+/** One hourly bucket of the 24h request history. */
+export interface MetricsHistoryBucket {
+  start: TimeString
+  success: number
+  errors: number
+}
+
+/** Sums over the whole 24h window. */
+export interface MetricsHistoryTotals {
+  success: number
+  errors: number
+}
+
+/** GET /api/v1/metrics/history: 25 hourly buckets oldest→newest. */
+export interface MetricsHistoryResponse {
+  bucket_seconds: number
+  buckets: MetricsHistoryBucket[]
+  totals: MetricsHistoryTotals
+}
+
 // ---------------------------------------------------------------------------
 // Logs (internal/logging AccessEntry)
 // ---------------------------------------------------------------------------

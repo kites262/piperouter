@@ -13,6 +13,7 @@ import type {
   DiagnosticsResult,
   LogsQuery,
   LogsResponse,
+  MetricsHistoryResponse,
   MetricsSnapshot,
   RouteConfig,
   RouteMetrics,
@@ -180,6 +181,10 @@ export async function deleteTransport(name: string, revision?: string): Promise<
 
 export function getMetrics(): Promise<MetricsSnapshot> {
   return request('GET', `${BASE}/metrics`)
+}
+
+export function getMetricsHistory(): Promise<MetricsHistoryResponse> {
+  return request('GET', `${BASE}/metrics/history`)
 }
 
 export async function getRouteMetrics(name: string): Promise<RouteMetrics> {

@@ -226,6 +226,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/metrics/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the rolling 48h request history
+         * @description Fixed series of 49 hourly UTC buckets (48 sealed + the current
+         *     partial hour), oldest first. Hours with no recorded traffic —
+         *     including hours before process start — are zero-filled so the
+         *     series is always contiguous. In-memory only; survives config
+         *     reloads, resets on restart. WebSocket connections count in the
+         *     bucket where they ended.
+         */
+        get: operations["getMetricsHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/logs": {
         parameters: {
             query?: never;
@@ -603,6 +628,36 @@ export interface components {
              * @description Access-log entries dropped by the ring buffer due to overflow.
              */
             log_dropped: number;
+        };
+        /** @description One hourly bucket of the 48h request history. */
+        MetricsHistoryBucket: {
+            /**
+             * Format: date-time
+             * @description UTC start of the hour this bucket covers.
+             */
+            start: string;
+            /** Format: int64 */
+            success: number;
+            /**
+             * Format: int64
+             * @description 5xx responses plus upstream errors, same rule as error_requests.
+             */
+            errors: number;
+        };
+        /** @description Sums over the whole 48h window. */
+        MetricsHistoryTotals: {
+            /** Format: int64 */
+            success: number;
+            /** Format: int64 */
+            errors: number;
+        };
+        /** @description Rolling 48h success/error series for the dashboard charts. */
+        MetricsHistory: {
+            /** @description Width of one bucket in seconds (3600). */
+            bucket_seconds: number;
+            /** @description Exactly 49 buckets oldest→newest; last is the current partial hour. */
+            buckets: components["schemas"]["MetricsHistoryBucket"][];
+            totals: components["schemas"]["MetricsHistoryTotals"];
         };
         /** @description One access-log record. Never contains query strings, bodies or header values — except the client's forward headers (see forward_headers), which are proxy metadata, not credentials. */
         AccessLogEntry: {
@@ -1188,6 +1243,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MetricsSnapshot"];
+                };
+            };
+        };
+    };
+    getMetricsHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current 48h history. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricsHistory"];
                 };
             };
         };
