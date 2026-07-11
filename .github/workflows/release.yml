@@ -1,0 +1,73 @@
+name: Release
+
+# Pushing a v* tag builds the single binary for every target and publishes a
+# GitHub Release with the archives + checksums attached.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the WebUI
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: |
+          cd web
+          npm ci
+          npm run generate:api
+          npm run build
+
+      - name: Embed the WebUI for go:embed
+        run: |
+          rm -rf internal/webui/dist
+          cp -r web/dist internal/webui/dist
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-compile and package
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          mkdir -p dist build
+          targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
+          for t in $targets; do
+            os="${t%/*}"; arch="${t#*/}"
+            bin="piperouter"; [ "$os" = "windows" ] && bin="piperouter.exe"
+            stage="piperouter_${TAG}_${os}_${arch}"
+            mkdir -p "build/$stage"
+            echo "→ building $os/$arch"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X main.version=${ver}" \
+              -o "build/$stage/$bin" ./cmd/piperouter
+            cp README.md LICENSE configs/example.yaml "build/$stage/"
+            if [ "$os" = "windows" ]; then
+              (cd build && zip -qr "../dist/${stage}.zip" "$stage")
+            else
+              tar -C build -czf "dist/${stage}.tar.gz" "$stage"
+            fi
+          done
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          echo "artifacts:"; ls -la dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PipeRouter ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*
