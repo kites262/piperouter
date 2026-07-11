@@ -218,6 +218,12 @@ export interface MetricsSnapshot {
 // Logs (internal/logging AccessEntry)
 // ---------------------------------------------------------------------------
 
+/** One captured forward header (proxy metadata — never credentials). */
+export interface ForwardHeader {
+  name: string
+  value: string
+}
+
 export interface AccessLogEntry {
   time: TimeString
   route: string
@@ -228,6 +234,8 @@ export interface AccessLogEntry {
   transport: string
   streaming: StreamKind
   error: string
+  /** Forward headers the client sent (Forwarded/Via/X-Forwarded-*); omitted when none. */
+  forward_headers?: ForwardHeader[]
 }
 
 /** GET /api/v1/logs response. */

@@ -604,7 +604,7 @@ export interface components {
              */
             log_dropped: number;
         };
-        /** @description One access-log record. Never contains query strings, bodies or header values. */
+        /** @description One access-log record. Never contains query strings, bodies or header values — except the client's forward headers (see forward_headers), which are proxy metadata, not credentials. */
         AccessLogEntry: {
             /** Format: date-time */
             time: string;
@@ -626,6 +626,13 @@ export interface components {
             streaming: "" | "sse" | "websocket";
             /** @description Error classification code (e.g. `upstream_timeout`); empty if none. */
             error: string;
+            /** @description Proxy-metadata headers the client sent (Forwarded, Via, X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Proto), in stable order — recorded even when strip_forward_headers removes them from the forwarded request. Only headers actually present are listed; values are truncated to 256 characters. Omitted when the client sent none. */
+            forward_headers?: {
+                /** @example X-Forwarded-For */
+                name: string;
+                /** @example 203.0.113.7 */
+                value: string;
+            }[];
         };
         LogsResponse: {
             /** @description Matching entries, newest first. */

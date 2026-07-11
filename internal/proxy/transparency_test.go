@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // recordedRequest is what the upstream observed for one request.
@@ -209,6 +210,61 @@ routes:
 			t.Errorf("Via = %q", got)
 		}
 	})
+}
+
+func TestForwardHeadersCapturedInAccessLog(t *testing.T) {
+	_, tp, _ := newTransparencyFixture(t)
+
+	huge := strings.Repeat("h", maxLoggedHeaderValue+50) + ".example.com"
+	req, _ := http.NewRequest(http.MethodGet, tp.server.URL+"/api/echo", nil)
+	req.Header.Set("Via", "1.1 caddy")
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	req.Header.Add("X-Forwarded-For", "5.6.7.8")
+	req.Header.Set("X-Forwarded-Host", huge)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	resp.Body.Close()
+
+	// Entries land shortly after the client sees the response.
+	waitFor(t, 2*time.Second, func() bool {
+		entries := tp.ring.Snapshot(1, "", "")
+		return len(entries) == 1 && len(entries[0].ForwardHeaders) > 0
+	}, "access entry with forward headers")
+
+	got := tp.ring.Snapshot(1, "", "")[0].ForwardHeaders
+	// Stable order (forwardHeaders), only headers actually sent, multiple
+	// values comma-joined, oversized values truncated with a marker.
+	if len(got) != 3 {
+		t.Fatalf("captured %d headers, want 3: %+v", len(got), got)
+	}
+	if got[0].Name != "Via" || got[0].Value != "1.1 caddy" {
+		t.Errorf("got[0] = %+v, want Via: 1.1 caddy", got[0])
+	}
+	if got[1].Name != "X-Forwarded-For" || got[1].Value != "1.2.3.4, 5.6.7.8" {
+		t.Errorf("got[1] = %+v, want joined X-Forwarded-For", got[1])
+	}
+	if got[2].Name != "X-Forwarded-Host" {
+		t.Errorf("got[2].Name = %q, want X-Forwarded-Host", got[2].Name)
+	}
+	if !strings.HasSuffix(got[2].Value, "…(truncated)") ||
+		len(got[2].Value) > maxLoggedHeaderValue+len("…(truncated)") {
+		t.Errorf("oversized value not truncated: len=%d", len(got[2].Value))
+	}
+
+	// A request without forward headers stores none.
+	resp2, err := http.Get(tp.server.URL + "/api/echo")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp2.Body.Close()
+	waitFor(t, 2*time.Second, func() bool {
+		return len(tp.ring.Snapshot(2, "", "")) == 2
+	}, "second access entry")
+	if hdrs := tp.ring.Snapshot(1, "", "")[0].ForwardHeaders; hdrs != nil {
+		t.Errorf("plain request captured forward headers: %+v", hdrs)
+	}
 }
 
 func TestHopByHopHeadersStripped(t *testing.T) {

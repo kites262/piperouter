@@ -1,7 +1,7 @@
 <!-- Logs page (PRD §19.6): recent access-log ring buffer.
      2s polling with pause/resume, manual refresh, route/status/limit filters.
      Entries arrive newest-first from the API and are never re-sorted.
-     No bodies, no headers — ever. -->
+     No bodies, no header values — except captured forward headers. -->
 <script setup lang="ts">
 import { AlertTriangle, ScrollText, SearchX } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -108,7 +108,8 @@ onMounted(async () => {
     <div class="animate-fade-up">
       <h1 class="text-lg font-semibold tracking-tight text-fg">Logs</h1>
       <p class="mt-1 text-sm text-fg-muted">
-        Recent access log ring buffer — no bodies, no headers.
+        Recent access log ring buffer — no bodies, no credentials. Rows with forward headers
+        (X-Forwarded-*) expand to show them.
       </p>
     </div>
 

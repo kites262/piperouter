@@ -1,6 +1,9 @@
 package logging
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // Ring is a fixed-capacity in-memory circular buffer of recent access
 // entries (PRD §14.2). Add is O(1) under a mutex and never performs I/O, so
@@ -14,6 +17,7 @@ type Ring struct {
 	next    int           // index of the next write
 	size    int           // number of valid entries, <= len(buf)
 	dropped uint64        // overwritten-by-overflow count
+	enabled atomic.Bool   // len(buf) > 0, readable without the mutex
 }
 
 // NewRing creates a ring buffer. capacity <= 0 returns a disabled ring.
@@ -21,9 +25,14 @@ func NewRing(capacity int) *Ring {
 	r := &Ring{}
 	if capacity > 0 {
 		r.buf = make([]AccessEntry, capacity)
+		r.enabled.Store(true)
 	}
 	return r
 }
+
+// Enabled reports whether the ring currently stores entries. Lock-free, so
+// the data plane can skip per-entry work for a disabled ring cheaply.
+func (r *Ring) Enabled() bool { return r.enabled.Load() }
 
 // Add appends an entry, overwriting the oldest when full. No-op when
 // disabled.
@@ -89,6 +98,7 @@ func matchStatusClass(e AccessEntry, class string) bool {
 func (r *Ring) SetCapacity(n int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.enabled.Store(n > 0)
 	if n <= 0 {
 		r.buf, r.next, r.size = nil, 0, 0
 		return

@@ -1056,7 +1056,8 @@ components:
       type: object
       description: >
         One access-log record. Never contains query strings, bodies or
-        header values.
+        header values — except the client's forward headers (see
+        forward_headers), which are proxy metadata, not credentials.
       required:
         - time
         - route
@@ -1095,6 +1096,25 @@ components:
         error:
           type: string
           description: Error classification code (e.g. `upstream_timeout`); empty if none.
+        forward_headers:
+          type: array
+          description: >
+            Proxy-metadata headers the client sent (Forwarded, Via,
+            X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Proto), in stable
+            order — recorded even when strip_forward_headers removes them
+            from the forwarded request. Only headers actually present are
+            listed; values are truncated to 256 characters. Omitted when the
+            client sent none.
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name:
+                type: string
+                example: X-Forwarded-For
+              value:
+                type: string
+                example: 203.0.113.7
 
     LogsResponse:
       type: object

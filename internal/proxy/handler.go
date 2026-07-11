@@ -217,7 +217,10 @@ func (h *handler) finalize(rw *responseRecorder, r *http.Request, st *requestSta
 		Streaming:  string(st.streaming),
 		Error:      st.errClass,
 	}
-	if h.ring != nil {
+	if h.ring != nil && h.ring.Enabled() {
+		// Ring only — LogAccess never emits header values to stdout. Not
+		// captured at all when recent_logs disables the ring.
+		entry.ForwardHeaders = captureForwardHeaders(r.Header)
 		h.ring.Add(entry)
 	}
 	logging.LogAccess(h.logger, entry)
@@ -239,6 +242,44 @@ func truncatePath(p string) string {
 		return p
 	}
 	return p[:maxLoggedPath] + "…(truncated)"
+}
+
+// maxLoggedHeaderValue caps each captured forward-header value so the ring
+// stays bounded against absurd client-sent values (§22.2).
+const maxLoggedHeaderValue = 256
+
+// captureForwardHeaders extracts the inbound proxy-metadata headers
+// (forwardHeaders) for the access ring, so the WebUI can show the original
+// client even when strip_forward_headers removes them from the outbound
+// request. Only headers the client actually sent are listed, in the stable
+// forwardHeaders order; multiple values are comma-joined. Returns nil when
+// none are present. At most one allocation: with a tiny live heap the GC
+// cadence tracks allocation volume, so the hot path stays lean.
+func captureForwardHeaders(h http.Header) []logging.ForwardHeader {
+	var out []logging.ForwardHeader
+	for _, k := range forwardHeaders {
+		vals := h[k]
+		if len(vals) == 0 {
+			continue
+		}
+		if out == nil {
+			out = make([]logging.ForwardHeader, 0, len(forwardHeaders))
+		}
+		var v string
+		if len(vals) == 1 {
+			// Copy, never reference: the ring retains entries long after
+			// the request, and keeping the original string would pin the
+			// request's whole header-parse slab (§22.2).
+			v = strings.Clone(vals[0])
+		} else {
+			v = strings.Join(vals, ", ")
+		}
+		if len(v) > maxLoggedHeaderValue {
+			v = v[:maxLoggedHeaderValue] + "…(truncated)"
+		}
+		out = append(out, logging.ForwardHeader{Name: k, Value: v})
+	}
+	return out
 }
 
 // isWebSocketUpgrade reports whether the request asks for a WebSocket

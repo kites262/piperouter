@@ -1,9 +1,11 @@
 <!-- Flat dense monospace access-log table (PRD §19.6).
      Built page-locally (tighter cells than the shared Table kit) with a fixed
      column layout so newly polled rows never cause horizontal jank.
-     Never renders bodies or headers. -->
+     Never renders bodies or headers — except captured forward headers
+     (Forwarded/Via/X-Forwarded-*), shown in a collapsible detail row. -->
 <script setup lang="ts">
-import { ArrowLeftRight, Rss } from 'lucide-vue-next'
+import { ArrowLeftRight, ChevronRight, Rss } from 'lucide-vue-next'
+import { ref } from 'vue'
 
 import type { AccessLogEntry } from '@/api/types'
 import Badge from '@/components/ui/Badge.vue'
@@ -16,6 +18,35 @@ type BadgeVariant = 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'm
 /** Stable row key: entries arrive newest-first and are never re-sorted. */
 function rowKey(entry: AccessLogEntry, index: number): string {
   return `${entry.time}|${entry.path}|${index}`
+}
+
+/**
+ * Expansion is keyed by entry CONTENT (not index) so an expanded row stays
+ * expanded while polling prepends new rows above it.
+ */
+function contentKey(entry: AccessLogEntry): string {
+  return `${entry.time}|${entry.path}|${entry.status}|${entry.duration_ms}`
+}
+
+const expanded = ref(new Set<string>())
+
+function toggleExpand(entry: AccessLogEntry): void {
+  const key = contentKey(entry)
+  const next = new Set(expanded.value)
+  if (next.has(key)) {
+    next.delete(key)
+  } else {
+    next.add(key)
+  }
+  expanded.value = next
+}
+
+function isExpanded(entry: AccessLogEntry): boolean {
+  return expanded.value.has(contentKey(entry))
+}
+
+function hasForwardHeaders(entry: AccessLogEntry): boolean {
+  return (entry.forward_headers?.length ?? 0) > 0
 }
 
 /** HH:MM:SS.mmm in the viewer's local time zone. */
@@ -63,8 +94,9 @@ function statusVariant(status: number): BadgeVariant {
 
 <template>
   <div class="card-flat overflow-x-auto">
-    <table class="w-full min-w-[64rem] table-fixed border-collapse font-mono text-xs">
+    <table class="w-full min-w-[66rem] table-fixed border-collapse font-mono text-xs">
       <colgroup>
+        <col class="w-8" />
         <col class="w-28" />
         <col class="w-32" />
         <col class="w-20" />
@@ -77,6 +109,7 @@ function statusVariant(status: number): BadgeVariant {
       </colgroup>
       <thead class="border-b border-border">
         <tr>
+          <th class="px-1 py-2"><span class="sr-only">Details</span></th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Time</th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Route</th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Method</th>
@@ -91,11 +124,24 @@ function statusVariant(status: number): BadgeVariant {
         </tr>
       </thead>
       <tbody class="divide-y divide-border">
-        <tr
-          v-for="(entry, index) in entries"
-          :key="rowKey(entry, index)"
-          class="transition-colors duration-150 hover:bg-surface-raised/50"
-        >
+        <template v-for="(entry, index) in entries" :key="rowKey(entry, index)">
+        <tr class="transition-colors duration-150 hover:bg-surface-raised/50">
+          <td class="px-1 py-1.5 text-center">
+            <button
+              v-if="hasForwardHeaders(entry)"
+              type="button"
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+              :title="isExpanded(entry) ? 'Hide forward headers' : 'Show forward headers'"
+              :aria-expanded="isExpanded(entry)"
+              @click="toggleExpand(entry)"
+            >
+              <ChevronRight
+                class="h-3.5 w-3.5 transition-transform duration-150"
+                :class="isExpanded(entry) ? 'rotate-90' : ''"
+              />
+              <span class="sr-only">Forward headers</span>
+            </button>
+          </td>
           <td class="whitespace-nowrap px-3 py-1.5 text-fg-secondary">{{ formatTime(entry.time) }}</td>
           <td class="truncate px-3 py-1.5" :title="entry.route !== '' ? entry.route : undefined">
             <span v-if="entry.route !== ''" class="text-fg-secondary">{{ entry.route }}</span>
@@ -135,6 +181,23 @@ function statusVariant(status: number): BadgeVariant {
             <span v-else class="text-fg-muted">—</span>
           </td>
         </tr>
+        <!-- Collapsible detail: only the forward headers the client sent. -->
+        <tr v-if="hasForwardHeaders(entry) && isExpanded(entry)" class="bg-bg-deep/40">
+          <td class="px-1 py-0" />
+          <td :colspan="9" class="px-3 pb-2.5 pt-1">
+            <dl class="space-y-0.5">
+              <div
+                v-for="h in entry.forward_headers"
+                :key="h.name"
+                class="flex items-baseline gap-2"
+              >
+                <dt class="shrink-0 text-[11px] text-fg-muted">{{ h.name }}:</dt>
+                <dd class="min-w-0 break-all text-fg-secondary">{{ h.value }}</dd>
+              </div>
+            </dl>
+          </td>
+        </tr>
+        </template>
       </tbody>
     </table>
   </div>

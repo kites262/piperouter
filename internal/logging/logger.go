@@ -1,6 +1,9 @@
 // Package logging provides slog setup, access-log entries and the recent
-// logs ring buffer (PRD §14). It never records bodies, query strings or any
-// header values (§14.3, §23.12).
+// logs ring buffer (PRD §14). It never records bodies, query strings or
+// header values (§14.3, §23.12) — with one deliberate exception: the
+// client's forward headers (Forwarded, Via, X-Forwarded-*) are kept in the
+// in-memory ring for the WebUI. They identify the original client and
+// proxy chain; they are never credentials, and they never reach stdout.
 package logging
 
 import (
@@ -37,8 +40,17 @@ func ParseLevel(s string) (slog.Level, error) {
 	}
 }
 
+// ForwardHeader is one captured proxy-metadata request header
+// (Forwarded, Via or X-Forwarded-*). Name is canonical; Value is the
+// inbound value, length-capped by the proxy before it gets here.
+type ForwardHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 // AccessEntry is one access-log record (PRD §14.3). Path never contains a
-// query string; no header or body values are ever stored.
+// query string; no header or body values are ever stored, except the
+// forward headers described on ForwardHeaders.
 type AccessEntry struct {
 	Time       time.Time `json:"time"`
 	Route      string    `json:"route"` // "" if unmatched
@@ -49,6 +61,10 @@ type AccessEntry struct {
 	Transport  string    `json:"transport"`
 	Streaming  string    `json:"streaming"` // ""|"sse"|"websocket"
 	Error      string    `json:"error"`     // classification code, "" if none
+	// ForwardHeaders holds the inbound forward headers when the client sent
+	// any — captured before strip_forward_headers removes them from the
+	// outbound request. Ring/WebUI only; LogAccess never emits them.
+	ForwardHeaders []ForwardHeader `json:"forward_headers,omitempty"`
 }
 
 // LogAccess emits exactly one Info record with msg "access" and structured

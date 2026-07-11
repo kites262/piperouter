@@ -111,6 +111,8 @@ With `admin.enabled: false` the admin API and WebUI are off; the proxy keeps run
 
 The ring buffer overwrites the oldest entries when full and is cleared on restart. Nothing is written to disk. Structured logs go to stdout.
 
+Ring entries record method, path (never the query string), status, duration, transport and stream kind — plus, when the client sent any, its forward headers (`Forwarded`, `Via`, `X-Forwarded-*`; values capped at 256 characters). Forward headers are captured even on routes that strip them from the outbound request, so the WebUI always shows the original client. No other header values, and never any bodies, are recorded; header values never go to stdout.
+
 ### `network` — timeouts
 
 Global outbound tuning, shared by all transports. There is deliberately **no overall request deadline**: response bodies may stream for hours (SSE, large downloads) without being cut off.
@@ -252,7 +254,7 @@ What PipeRouter does **not** touch:
 Two deliberate exceptions to full transparency:
 
 - `Host` is always set to the **target's** host (there is no `preserve_host` option in v0.1).
-- PipeRouter adds **no** `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded` or `Via` headers — and by default it **removes** inbound ones (`strip_forward_headers: true`), so a fronting reverse proxy such as Caddy or nginx never leaks the real client IP or your public hostname to the target. Set `strip_forward_headers: false` on a route to pass the inbound values through unchanged (useful when the target is your own service and needs the client IP).
+- PipeRouter adds **no** `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded` or `Via` headers — and by default it **removes** inbound ones (`strip_forward_headers: true`), so a fronting reverse proxy such as Caddy or nginx never leaks the real client IP or your public hostname to the target. Set `strip_forward_headers: false` on a route to pass the inbound values through unchanged (useful when the target is your own service and needs the client IP). Stripped or not, inbound forward headers are still captured in the in-memory access log, so the WebUI keeps showing the original client.
 
 ## Error mapping
 

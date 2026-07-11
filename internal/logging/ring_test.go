@@ -269,3 +269,21 @@ func TestRingConcurrentAdd(t *testing.T) {
 		t.Errorf("Dropped = %d, want %d", d, total-capacity)
 	}
 }
+
+func TestRingEnabled(t *testing.T) {
+	if NewRing(0).Enabled() {
+		t.Error("NewRing(0).Enabled() = true, want false")
+	}
+	r := NewRing(4)
+	if !r.Enabled() {
+		t.Error("NewRing(4).Enabled() = false, want true")
+	}
+	r.SetCapacity(0)
+	if r.Enabled() {
+		t.Error("Enabled() = true after SetCapacity(0)")
+	}
+	r.SetCapacity(8)
+	if !r.Enabled() {
+		t.Error("Enabled() = false after SetCapacity(8)")
+	}
+}
