@@ -1,0 +1,20 @@
+# Build artifacts
+/dist/
+/web/dist/
+/web/node_modules/
+internal/webui/dist/*
+!internal/webui/dist/index.html
+
+# Local configs / runtime files
+piperouter.yaml
+piperouter.yaml.bak
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Go
+coverage.out
+*.test
