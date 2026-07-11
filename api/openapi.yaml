@@ -1,0 +1,1210 @@
+openapi: 3.0.3
+
+info:
+  title: PipeRouter Admin API
+  version: 0.1.0
+  description: |
+    REST/JSON management API for PipeRouter, a lightweight HTTP distribution
+    proxy. Served under `/api/v1` by the admin server (default
+    `127.0.0.1:9090`).
+
+    General rules:
+    - All request and response bodies are JSON. Request bodies are limited
+      to 1 MiB.
+    - No CORS headers are ever emitted. On POST/PUT/DELETE requests that
+      carry an `Origin` header, its host must equal the request `Host`,
+      otherwise the API responds `403 {"error":"origin_not_allowed"}`.
+    - Errors use the shape `{"error":"<code>","detail":"...","issues":[...]}`
+      (`issues` only accompanies `validation_failed`). Error codes:
+      `validation_failed`, `revision_conflict`, `not_found`,
+      `builtin_transport`, `transport_in_use`, `origin_not_allowed`,
+      `invalid_request`, `method_not_allowed`, `internal_error`.
+    - Configuration mutations accept an optional `revision`; when present it
+      must match the active configuration revision or the API responds
+      `409 {"error":"revision_conflict"}`. An absent or empty revision skips
+      the check.
+    - Durations in the configuration are Go duration strings such as
+      `"10s"` or `"1m30s"`.
+
+servers:
+  - url: /
+
+tags:
+  - name: status
+    description: Process and configuration status.
+  - name: config
+    description: Full-configuration read, replace and validation.
+  - name: routes
+    description: Route CRUD.
+  - name: transports
+    description: Transport CRUD.
+  - name: metrics
+    description: In-memory runtime metrics.
+  - name: logs
+    description: Recent access-log ring buffer.
+  - name: diagnostics
+    description: Route and transport connectivity tests.
+
+paths:
+  /api/v1/status:
+    get:
+      tags: [status]
+      operationId: getStatus
+      summary: Get process and configuration status
+      responses:
+        '200':
+          description: Current status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Get the full normalized configuration
+      responses:
+        '200':
+          description: Active configuration and its revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigEnvelope'
+    put:
+      tags: [config]
+      operationId: putConfig
+      summary: Replace the full configuration
+      description: |
+        Validates, atomically persists and hot-applies the supplied
+        configuration. On any failure the previous file and runtime snapshot
+        remain untouched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Configuration applied; new revision returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestValidation'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+
+  /api/v1/config/validate:
+    post:
+      tags: [config]
+      operationId: validateConfig
+      summary: Validate a configuration without saving or applying it
+      description: |
+        Always responds `200` for well-formed requests, even when the
+        supplied configuration content is invalid; validation problems are
+        reported in `issues`. `400 invalid_request` is returned only for
+        malformed JSON.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateRequest'
+      responses:
+        '200':
+          description: Validation outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestInvalid'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+
+  /api/v1/routes:
+    get:
+      tags: [routes]
+      operationId: listRoutes
+      summary: List routes
+      description: Returns all configured routes in configuration order.
+      responses:
+        '200':
+          description: Route list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteListResponse'
+    post:
+      tags: [routes]
+      operationId: createRoute
+      summary: Create a route
+      description: |
+        Adds a route and hot-applies the configuration. A duplicate name or
+        prefix yields `400 validation_failed`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteUpsertRequest'
+      responses:
+        '201':
+          description: Route created; new configuration revision returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestValidation'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+
+  /api/v1/routes/{name}:
+    parameters:
+      - $ref: '#/components/parameters/RouteName'
+    get:
+      tags: [routes]
+      operationId: getRoute
+      summary: Get a route
+      responses:
+        '200':
+          description: The route.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteConfig'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [routes]
+      operationId: updateRoute
+      summary: Update a route
+      description: |
+        Replaces the named route and hot-applies the configuration.
+        `route.name` must equal the `{name}` path segment, otherwise
+        `400 validation_failed`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteUpsertRequest'
+      responses:
+        '200':
+          description: Route updated; new configuration revision returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestValidation'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+    delete:
+      tags: [routes]
+      operationId: deleteRoute
+      summary: Delete a route
+      responses:
+        '204':
+          description: Route deleted.
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/routes/{name}/metrics:
+    parameters:
+      - $ref: '#/components/parameters/RouteName'
+    get:
+      tags: [metrics]
+      operationId: getRouteMetrics
+      summary: Get metrics for one route
+      responses:
+        '200':
+          description: Metrics for the named route.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteMetrics'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/transports:
+    get:
+      tags: [transports]
+      operationId: listTransports
+      summary: List transports
+      description: |
+        Returns the built-in transport
+        `{"name":"direct","type":"direct","url":""}` first, followed by
+        configured transports in configuration order.
+      responses:
+        '200':
+          description: Transport list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransportListResponse'
+    post:
+      tags: [transports]
+      operationId: createTransport
+      summary: Create a transport
+      description: |
+        Adds a transport and hot-applies the configuration. A duplicate name
+        (including the reserved name `direct`) yields
+        `400 validation_failed`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransportUpsertRequest'
+      responses:
+        '201':
+          description: Transport created; new configuration revision returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransportEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestValidation'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+
+  /api/v1/transports/{name}:
+    parameters:
+      - $ref: '#/components/parameters/TransportName'
+    get:
+      tags: [transports]
+      operationId: getTransport
+      summary: Get a transport
+      description: The built-in `direct` transport is readable like any other.
+      responses:
+        '200':
+          description: The transport.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransportConfig'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [transports]
+      operationId: updateTransport
+      summary: Update a transport
+      description: |
+        Replaces the named transport and hot-applies the configuration.
+        `transport.name` must equal the `{name}` path segment, otherwise
+        `400 validation_failed`. The built-in `direct` transport cannot be
+        updated (`403 builtin_transport`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransportUpsertRequest'
+      responses:
+        '200':
+          description: Transport updated; new configuration revision returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransportEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequestValidation'
+        '403':
+          description: >
+            `builtin_transport` when `{name}` is `direct`, or
+            `origin_not_allowed` when the Origin check fails.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+    delete:
+      tags: [transports]
+      operationId: deleteTransport
+      summary: Delete a transport
+      description: |
+        Removes the named transport and hot-applies the configuration. The
+        built-in `direct` transport cannot be deleted
+        (`403 builtin_transport`). A transport still referenced by one or
+        more routes cannot be deleted (`409 transport_in_use`, with `detail`
+        listing the referencing routes).
+      responses:
+        '204':
+          description: Transport deleted.
+        '403':
+          description: >
+            `builtin_transport` when `{name}` is `direct`, or
+            `origin_not_allowed` when the Origin check fails.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: >
+            `transport_in_use` — the transport is still referenced by one or
+            more routes; `detail` lists the referencing route names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/v1/metrics:
+    get:
+      tags: [metrics]
+      operationId: getMetrics
+      summary: Get the global metrics snapshot
+      description: |
+        In-memory counters since process start (reset on restart), including
+        per-route breakdowns and the access-log drop counter.
+      responses:
+        '200':
+          description: Current metrics snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSnapshot'
+
+  /api/v1/logs:
+    get:
+      tags: [logs]
+      operationId: getLogs
+      summary: Get recent access-log entries
+      description: |
+        Returns entries from the in-memory ring buffer, newest first.
+        Entries never contain query strings, bodies or header values.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: >
+            Maximum number of entries to return. Omitted or non-positive
+            values return all buffered entries.
+          schema:
+            type: integer
+        - name: route
+          in: query
+          required: false
+          description: Exact route name to filter by.
+          schema:
+            type: string
+        - name: status_class
+          in: query
+          required: false
+          description: >
+            Status-class filter: `2xx`–`5xx` match the response status
+            family; `error` matches entries whose error classification is
+            non-empty.
+          schema:
+            type: string
+            enum: ['2xx', '3xx', '4xx', '5xx', 'error']
+      responses:
+        '200':
+          description: Filtered log entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogsResponse'
+
+  /api/v1/diagnostics/route:
+    post:
+      tags: [diagnostics]
+      operationId: testRoute
+      summary: Test a route end-to-end
+      description: |
+        Executes the real pipeline (rewrite → transport → target) for the
+        named route with a 15-second overall timeout, no redirect following,
+        and at most 64 KiB of response body read and discarded. Upstream
+        401/403/404 still report `ok: true` (the link works). Bodies and
+        authentication headers are never stored or logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteTestRequest'
+      responses:
+        '200':
+          description: Test result (also returned when the probe itself failed; see `ok`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticsResult'
+        '400':
+          $ref: '#/components/responses/BadRequestInvalid'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/diagnostics/transport:
+    post:
+      tags: [diagnostics]
+      operationId: testTransport
+      summary: Test a transport against a URL
+      description: |
+        Sends a probe request to the given URL through the named transport
+        with a 15-second overall timeout, no redirect following, and at most
+        64 KiB of response body read and discarded. The URL must be absolute
+        http/https, otherwise `400 invalid_request`. The test URL and
+        response body are never stored or logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransportTestRequest'
+      responses:
+        '200':
+          description: Test result (also returned when the probe itself failed; see `ok`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticsResult'
+        '400':
+          $ref: '#/components/responses/BadRequestInvalid'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    RouteName:
+      name: name
+      in: path
+      required: true
+      description: Route name.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+    TransportName:
+      name: name
+      in: path
+      required: true
+      description: Transport name (`direct` addresses the built-in transport).
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+
+  responses:
+    BadRequestValidation:
+      description: >
+        `validation_failed` — the resulting configuration is invalid; the
+        `issues` array lists every problem. Malformed JSON or an
+        unprocessable body yields `invalid_request` instead.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    BadRequestInvalid:
+      description: '`invalid_request` — malformed JSON or an unacceptable field value.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    OriginNotAllowed:
+      description: >
+        `origin_not_allowed` — the request carried an `Origin` header whose
+        host does not match the request `Host`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: '`not_found` — no object with the given name exists.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    RevisionConflict:
+      description: >
+        `revision_conflict` — the supplied revision does not match the
+        active configuration revision; reload and retry.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    Duration:
+      type: string
+      description: >
+        Go duration string, e.g. "10s", "1m30s". Serialized as a string in
+        both YAML and JSON.
+      example: '10s'
+
+    Config:
+      type: object
+      description: Root configuration object. The YAML file is the single source of truth.
+      required: [version]
+      properties:
+        version:
+          type: integer
+          description: Configuration schema version. Only `1` is supported.
+          enum: [1]
+        server:
+          $ref: '#/components/schemas/ServerConfig'
+        runtime:
+          $ref: '#/components/schemas/RuntimeConfig'
+        network:
+          $ref: '#/components/schemas/NetworkConfig'
+        transports:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransportConfig'
+        routes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteConfig'
+
+    ServerConfig:
+      type: object
+      description: Listener configuration for the proxy and admin planes.
+      properties:
+        proxy:
+          $ref: '#/components/schemas/ProxyServerConfig'
+        admin:
+          $ref: '#/components/schemas/AdminServerConfig'
+        web:
+          $ref: '#/components/schemas/WebConfig'
+
+    ProxyServerConfig:
+      type: object
+      description: Data-plane listener.
+      properties:
+        listen:
+          type: string
+          description: Proxy listen address.
+          default: ':8080'
+          example: ':8080'
+        tls:
+          $ref: '#/components/schemas/TLSConfig'
+
+    TLSConfig:
+      type: object
+      description: Optional TLS for the proxy listener (certificates are loaded at startup).
+      properties:
+        enabled:
+          type: boolean
+          default: false
+        cert_file:
+          type: string
+          description: Path to the certificate chain PEM. Required when `enabled` is true.
+        key_file:
+          type: string
+          description: Path to the private key PEM. Required when `enabled` is true.
+
+    AdminServerConfig:
+      type: object
+      description: Admin API / WebUI listener.
+      properties:
+        enabled:
+          type: boolean
+          nullable: true
+          description: Defaults to true when omitted.
+          default: true
+        listen:
+          type: string
+          description: Admin listen address. Defaults to loopback.
+          default: '127.0.0.1:9090'
+          example: '127.0.0.1:9090'
+
+    WebConfig:
+      type: object
+      description: Embedded WebUI toggle. The WebUI requires the admin server.
+      properties:
+        enabled:
+          type: boolean
+          nullable: true
+          description: Defaults to true when omitted; forced off when the admin server is disabled.
+          default: true
+
+    RuntimeConfig:
+      type: object
+      description: Runtime tuning.
+      properties:
+        log_level:
+          type: string
+          enum: [debug, info, warn, error]
+          default: info
+        recent_logs:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: >
+            Capacity of the in-memory access-log ring buffer. `0` disables
+            it. Defaults to 1000 when omitted.
+          default: 1000
+
+    NetworkConfig:
+      type: object
+      description: >
+        Global outbound tuning. No overall request deadline exists so
+        long-lived SSE streams are never cut off.
+      properties:
+        dial_timeout:
+          allOf:
+            - $ref: '#/components/schemas/Duration'
+          description: Dial timeout. Defaults to "10s".
+        tls_handshake_timeout:
+          allOf:
+            - $ref: '#/components/schemas/Duration'
+          description: TLS handshake timeout. Defaults to "10s".
+        response_header_timeout:
+          allOf:
+            - $ref: '#/components/schemas/Duration'
+          description: Time allowed for upstream response headers. Defaults to "120s".
+        idle_connection_timeout:
+          allOf:
+            - $ref: '#/components/schemas/Duration'
+          description: Idle pooled-connection timeout. Defaults to "90s".
+
+    RouteConfig:
+      type: object
+      description: One prefix → target mapping.
+      required: [name, prefix, target]
+      properties:
+        name:
+          type: string
+          description: Unique route name.
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+          example: openai
+        enabled:
+          type: boolean
+          nullable: true
+          description: Defaults to true when omitted.
+          default: true
+        prefix:
+          type: string
+          description: >
+            Request path prefix. Must start with "/"; a non-root prefix must
+            not end with "/"; must not contain "?", "#", ".." or "//"
+            segments. "/" matches everything.
+          example: /openai
+        target:
+          type: string
+          description: >
+            Absolute http/https target URL without userinfo, query or
+            fragment.
+          example: https://api.openai.com/v1
+        strip_prefix:
+          type: boolean
+          nullable: true
+          description: Remove the matched prefix before joining with the target base path. Defaults to true when omitted.
+          default: true
+        transport:
+          type: string
+          description: Name of the transport to use. Defaults to the built-in "direct" when omitted.
+          default: direct
+          example: jp-proxy
+
+    TransportConfig:
+      type: object
+      description: >
+        An outbound link. Configured transports are of type "http" or
+        "socks5"; type "direct" only appears on the synthetic built-in entry
+        returned by the API and cannot be declared in the configuration.
+      required: [name, type, url]
+      properties:
+        name:
+          type: string
+          description: Unique transport name. "direct" is reserved for the built-in transport.
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+          example: jp-proxy
+        type:
+          type: string
+          enum: [direct, http, socks5]
+          example: http
+        url:
+          type: string
+          description: >
+            Proxy server URL without userinfo. Scheme must be "http" for
+            type http and "socks5" for type socks5. Empty for the built-in
+            direct transport.
+          example: http://127.0.0.1:7890
+
+    StatusResponse:
+      type: object
+      description: Process and configuration status.
+      required: [version, started_at, uptime_seconds, proxy, admin, config]
+      properties:
+        version:
+          type: string
+          description: PipeRouter build version.
+          example: 0.1.0
+        started_at:
+          type: string
+          format: date-time
+        uptime_seconds:
+          type: number
+          format: double
+        proxy:
+          type: object
+          required: [listen, tls_enabled]
+          properties:
+            listen:
+              type: string
+              example: ':8080'
+            tls_enabled:
+              type: boolean
+        admin:
+          type: object
+          required: [listen]
+          properties:
+            listen:
+              type: string
+              example: '127.0.0.1:9090'
+        config:
+          type: object
+          required: [valid, last_error, revision, loaded_at, path]
+          properties:
+            valid:
+              type: boolean
+              description: False when the last reload attempt failed (the previous valid configuration keeps serving).
+            last_error:
+              type: string
+              description: Error from the last failed reload; empty when valid.
+            revision:
+              type: string
+              description: Revision of the ACTIVE snapshot.
+              example: 'sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08'
+            loaded_at:
+              type: string
+              format: date-time
+            path:
+              type: string
+              description: Configuration file path.
+              example: piperouter.yaml
+
+    ConfigEnvelope:
+      type: object
+      description: Full normalized configuration together with its revision.
+      required: [revision, config]
+      properties:
+        revision:
+          type: string
+          description: '"sha256:" + hex(sha256(canonical YAML)) of the configuration.'
+          example: 'sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08'
+        config:
+          $ref: '#/components/schemas/Config'
+
+    ConfigUpdateRequest:
+      type: object
+      description: Full-configuration replacement request.
+      required: [config]
+      properties:
+        revision:
+          type: string
+          description: Expected active revision; omit or leave empty to skip the conflict check.
+        config:
+          $ref: '#/components/schemas/Config'
+
+    ValidateRequest:
+      type: object
+      required: [config]
+      properties:
+        config:
+          $ref: '#/components/schemas/Config'
+
+    ValidateResponse:
+      type: object
+      required: [valid, issues]
+      properties:
+        valid:
+          type: boolean
+        issues:
+          type: array
+          description: Every validation problem found; empty when valid.
+          items:
+            type: string
+
+    RouteListResponse:
+      type: object
+      required: [routes]
+      properties:
+        routes:
+          type: array
+          description: Routes in configuration order.
+          items:
+            $ref: '#/components/schemas/RouteConfig'
+
+    RouteUpsertRequest:
+      type: object
+      description: Route create/update request.
+      required: [route]
+      properties:
+        revision:
+          type: string
+          description: Expected active revision; omit or leave empty to skip the conflict check.
+        route:
+          $ref: '#/components/schemas/RouteConfig'
+
+    RouteEnvelope:
+      type: object
+      description: Result of a route mutation.
+      required: [revision, route]
+      properties:
+        revision:
+          type: string
+          description: New active configuration revision.
+        route:
+          $ref: '#/components/schemas/RouteConfig'
+
+    TransportListResponse:
+      type: object
+      required: [transports]
+      properties:
+        transports:
+          type: array
+          description: >
+            The synthetic built-in entry
+            `{"name":"direct","type":"direct","url":""}` first, then
+            configured transports in configuration order.
+          items:
+            $ref: '#/components/schemas/TransportConfig'
+
+    TransportUpsertRequest:
+      type: object
+      description: Transport create/update request.
+      required: [transport]
+      properties:
+        revision:
+          type: string
+          description: Expected active revision; omit or leave empty to skip the conflict check.
+        transport:
+          $ref: '#/components/schemas/TransportConfig'
+
+    TransportEnvelope:
+      type: object
+      description: Result of a transport mutation.
+      required: [revision, transport]
+      properties:
+        revision:
+          type: string
+          description: New active configuration revision.
+        transport:
+          $ref: '#/components/schemas/TransportConfig'
+
+    LatencySummary:
+      type: object
+      description: Latency distribution summary derived from a fixed-bucket histogram.
+      required: [count, p50_ms, p95_ms, p99_ms]
+      properties:
+        count:
+          type: integer
+          format: int64
+          minimum: 0
+        p50_ms:
+          type: number
+          format: double
+        p95_ms:
+          type: number
+          format: double
+        p99_ms:
+          type: number
+          format: double
+
+    RouteMetrics:
+      type: object
+      description: Per-route counters. Reset on process restart.
+      required:
+        - name
+        - total
+        - status_2xx
+        - status_3xx
+        - status_4xx
+        - status_5xx
+        - upstream_errors
+        - active
+        - latency
+        - last_request_at
+      properties:
+        name:
+          type: string
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+        status_2xx:
+          type: integer
+          format: int64
+          minimum: 0
+        status_3xx:
+          type: integer
+          format: int64
+          minimum: 0
+        status_4xx:
+          type: integer
+          format: int64
+          minimum: 0
+        status_5xx:
+          type: integer
+          format: int64
+          minimum: 0
+        upstream_errors:
+          type: integer
+          format: int64
+          minimum: 0
+        active:
+          type: integer
+          format: int64
+          minimum: 0
+        latency:
+          $ref: '#/components/schemas/LatencySummary'
+        last_request_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null if the route has never served a request.
+
+    MetricsSnapshot:
+      type: object
+      description: >
+        Global metrics snapshot merged with the access-log drop counter.
+        In-memory only; reset on process restart.
+      required:
+        - started_at
+        - uptime_seconds
+        - total_requests
+        - error_requests
+        - active_requests
+        - active_websockets
+        - active_sse
+        - route_count
+        - transport_count
+        - latency
+        - routes
+        - log_dropped
+      properties:
+        started_at:
+          type: string
+          format: date-time
+        uptime_seconds:
+          type: number
+          format: double
+        total_requests:
+          type: integer
+          format: int64
+          minimum: 0
+        error_requests:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 5xx responses plus upstream errors.
+        active_requests:
+          type: integer
+          format: int64
+          minimum: 0
+        active_websockets:
+          type: integer
+          format: int64
+          minimum: 0
+        active_sse:
+          type: integer
+          format: int64
+          minimum: 0
+        route_count:
+          type: integer
+        transport_count:
+          type: integer
+        latency:
+          $ref: '#/components/schemas/LatencySummary'
+        routes:
+          type: array
+          description: Per-route metrics, sorted by name.
+          items:
+            $ref: '#/components/schemas/RouteMetrics'
+        log_dropped:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Access-log entries dropped by the ring buffer due to overflow.
+
+    AccessLogEntry:
+      type: object
+      description: >
+        One access-log record. Never contains query strings, bodies or
+        header values.
+      required:
+        - time
+        - route
+        - method
+        - path
+        - status
+        - duration_ms
+        - transport
+        - streaming
+        - error
+      properties:
+        time:
+          type: string
+          format: date-time
+        route:
+          type: string
+          description: Matched route name; empty if the request matched no route.
+        method:
+          type: string
+          example: GET
+        path:
+          type: string
+          description: Request path WITHOUT the query string.
+          example: /openai/models
+        status:
+          type: integer
+          example: 200
+        duration_ms:
+          type: number
+          format: double
+        transport:
+          type: string
+        streaming:
+          type: string
+          enum: ['', sse, websocket]
+        error:
+          type: string
+          description: Error classification code (e.g. `upstream_timeout`); empty if none.
+
+    LogsResponse:
+      type: object
+      required: [entries, dropped, capacity]
+      properties:
+        entries:
+          type: array
+          description: Matching entries, newest first.
+          items:
+            $ref: '#/components/schemas/AccessLogEntry'
+        dropped:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total entries dropped due to ring-buffer overflow.
+        capacity:
+          type: integer
+          description: Current ring-buffer capacity (0 = disabled).
+
+    RouteTestRequest:
+      type: object
+      description: Route diagnostics request.
+      required: [route]
+      properties:
+        route:
+          type: string
+          description: Name of the route to test.
+          example: openai
+        path:
+          type: string
+          description: Extra path appended below the route prefix before rewriting.
+          example: /models
+        method:
+          type: string
+          description: HTTP method for the probe.
+          default: GET
+
+    TransportTestRequest:
+      type: object
+      description: Transport diagnostics request.
+      required: [transport, url]
+      properties:
+        transport:
+          type: string
+          description: Name of the transport to test ("direct" is allowed).
+          example: jp-proxy
+        url:
+          type: string
+          description: Absolute http/https URL to probe.
+          example: https://api.openai.com/v1/models
+        method:
+          type: string
+          description: HTTP method for the probe.
+          default: GET
+
+    DiagnosticsResult:
+      type: object
+      description: >
+        Outcome of a diagnostics probe. Upstream 401/403/404 responses still
+        report `ok: true` — the network link works.
+      required:
+        - ok
+        - target_url
+        - transport
+        - status
+        - error_stage
+        - error
+        - header_duration_ms
+        - total_duration_ms
+      properties:
+        ok:
+          type: boolean
+        target_url:
+          type: string
+          description: Final rewritten target URL that was probed.
+          example: https://api.openai.com/v1/models
+        transport:
+          type: string
+          description: Transport used for the probe.
+        status:
+          type: integer
+          description: Upstream HTTP status; 0 if no HTTP response was received.
+        error_stage:
+          type: string
+          enum: ['', resolve, connect, tls, response]
+          description: Stage at which the probe failed; empty on success.
+        error:
+          type: string
+          description: Sanitized error message; empty on success.
+        header_duration_ms:
+          type: number
+          format: double
+          description: Time until upstream response headers were received.
+        total_duration_ms:
+          type: number
+          format: double
+
+    ApiError:
+      type: object
+      description: Standard error envelope.
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code.
+          enum:
+            - validation_failed
+            - revision_conflict
+            - not_found
+            - builtin_transport
+            - transport_in_use
+            - origin_not_allowed
+            - invalid_request
+            - method_not_allowed
+            - internal_error
+        detail:
+          type: string
+          description: Optional human-readable detail (never contains credentials or proxy URLs).
+        issues:
+          type: array
+          description: Present only for `validation_failed` — one entry per validation problem.
+          items:
+            type: string
