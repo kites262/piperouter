@@ -59,18 +59,24 @@ routes:
 
 	// Read lines on a goroutine so every expectation carries a deadline:
 	// a buffering proxy would make the first read hang until the response
-	// ends, failing the timeout below.
-	lines := make(chan string, 16)
-	readErr := make(chan error, 1)
+	// ends, failing the timeout below. Lines and the terminal error travel
+	// on ONE channel in read order: with separate channels both are ready
+	// once the whole tail has been drained, and select would pick between
+	// them at random, misreporting buffered lines as an early EOF.
+	type streamEvent struct {
+		line string
+		err  error
+	}
+	events := make(chan streamEvent, 16)
 	go func() {
 		br := bufio.NewReader(resp.Body)
 		for {
 			line, err := br.ReadString('\n')
 			if line != "" {
-				lines <- line
+				events <- streamEvent{line: line}
 			}
 			if err != nil {
-				readErr <- err
+				events <- streamEvent{err: err}
 				return
 			}
 		}
@@ -78,12 +84,13 @@ routes:
 	readLine := func(want string) {
 		t.Helper()
 		select {
-		case got := <-lines:
-			if got != want {
-				t.Fatalf("line = %q, want %q", got, want)
+		case ev := <-events:
+			if ev.err != nil {
+				t.Fatalf("stream ended early: %v", ev.err)
 			}
-		case err := <-readErr:
-			t.Fatalf("stream ended early: %v", err)
+			if ev.line != want {
+				t.Fatalf("line = %q, want %q", ev.line, want)
+			}
 		case <-time.After(2 * time.Second):
 			t.Fatalf("timed out waiting for line %q (response is being buffered)", want)
 		}
@@ -109,9 +116,9 @@ routes:
 	readLine("data: three\n")
 	readLine("\n")
 	select {
-	case err := <-readErr:
-		if err != io.EOF {
-			t.Fatalf("stream error = %v, want EOF", err)
+	case ev := <-events:
+		if ev.err != io.EOF {
+			t.Fatalf("stream event = %+v, want EOF", ev)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("stream did not end")
