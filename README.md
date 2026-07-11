@@ -1,45 +1,80 @@
+<div align="center">
+
 # PipeRouter
 
-PipeRouter is a lightweight HTTP distribution proxy with path rewriting and per-route outbound proxy selection.
+**A lightweight, single-binary HTTP distribution proxy.**
+Match by path prefix, rewrite onto a target, and forward transparently — each route over its own outbound link (`direct` / HTTP / SOCKS5).
 
-It matches incoming requests by path prefix, rewrites the path onto a target URL, and forwards the request transparently — optionally through a per-route HTTP or SOCKS5 proxy. One static binary, one YAML file, no database.
+One static binary. One YAML file. No database.
+
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
+[![WebUI](https://img.shields.io/badge/WebUI-Vue_3-42b883?logo=vuedotjs&logoColor=white)](web/)
+[![Release](https://img.shields.io/badge/release-v0.1.0-6d7cff)](#)
+[![Single binary](https://img.shields.io/badge/single_binary-~8MB-2ea043)](#)
+[![Database](https://img.shields.io/badge/database-none-lightgrey)](#)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ```text
-Request → Route Match → Path Rewrite → Transport Selection → Forward → Stream Response Back
+ Request ─▶ Route Match ─▶ Path Rewrite ─▶ Transport Select ─▶ Forward ─▶ Stream Response Back
+             prefix           strip/keep      direct·http·socks5     no body buffering, ever
 ```
 
-A typical use case is a single self-hosted entry point for many upstream APIs, each reached over its own network link:
+</div>
+
+---
+
+PipeRouter is one self-hosted entry point in front of many upstreams — each reached over its own
+network path, without touching what flows through it. It **never reads or rewrites request bodies,
+never touches your API keys, and adds no `X-Forwarded-*` headers.** Callers keep sending their own
+credentials straight to the upstream; PipeRouter just decides *where the request goes, how the path
+changes, and which link it travels on.*
 
 ```text
-/openai/*    → https://api.openai.com/v1/*   (via an HTTP proxy)
-/deepseek/*  → https://api.deepseek.com/*    (direct)
-/gemini/*    → https://generativelanguage.googleapis.com/*  (via SOCKS5)
+/openai/*    →  https://api.openai.com/v1/*                     via jp-proxy   (HTTP proxy)
+/deepseek/*  →  https://api.deepseek.com/*                      direct
+/gemini/*    →  https://generativelanguage.googleapis.com/*     via us-socks   (SOCKS5)
+/github/*    →  https://api.github.com/*                        direct
 ```
 
-PipeRouter never reads or rewrites request bodies, never touches your API keys, and adds no `X-Forwarded-*` headers — callers keep sending their own credentials straight to the upstream.
+That's the whole idea: a quiet, high-performance pipe you can see through — configured in YAML or
+from an embedded web console, reloaded live, with zero moving parts to operate.
 
-## Features
+## ✨ Features
 
-- **Prefix routing** — longest-prefix match on path-segment boundaries (`/openai` matches `/openai/models`, never `/openai2`)
-- **Path rewrite** — strip or keep the matched prefix, join with the target base path; query strings and percent-encoding pass through untouched
-- **Per-route transports** — `direct`, `http` proxy (CONNECT for HTTPS) and `socks5` outbound links, with pooled, reused connections
-- **Streaming first** — SSE and WebSocket work out of the box; request and response bodies are streamed, never buffered, so gigabyte uploads and hour-long event streams are fine
-- **Hot reload** — edit the YAML (or use the WebUI) and changes apply atomically without restarting; in-flight requests and open streams are never interrupted
-- **Embedded WebUI** — dashboard, route/transport editors, recent request log and diagnostics, served from the binary itself
-- **Single binary** — Go binary with the Vue 3 frontend embedded; no Node, no nginx at runtime
-- **No database** — the YAML file is the only persistent state; metrics and recent logs live in bounded memory
+| | |
+| --- | --- |
+| 🎯 **Prefix routing** | Longest-prefix match on path-segment boundaries — `/openai` matches `/openai/models`, never `/openai2`. Declaration order never matters. |
+| ✂️ **Path rewrite** | Strip or keep the matched prefix, join with the target base path. Query strings and percent-encoding (`%2F`, spaces) pass through byte-for-byte. |
+| 🔀 **Per-route transports** | `direct`, `http` (CONNECT tunnelling for HTTPS) and `socks5` outbound links — connection-pooled and reused across routes. |
+| 🌊 **Streaming first** | SSE and WebSocket work out of the box. Request and response bodies are streamed, never buffered — gigabyte uploads and hour-long event streams are fine. |
+| ♻️ **Hot reload** | Edit the YAML or use the WebUI; changes apply atomically. In-flight requests and open streams are never interrupted. Invalid config? It keeps serving the last good one. |
+| 🖥️ **Embedded WebUI** | Dashboard, route/transport editors, live logs and diagnostics — a Vue 3 console served straight from the binary (dark & light). |
+| 📦 **Single binary** | ~8 MB Go binary with the frontend embedded. No Node, no nginx, no sidecar at runtime. |
+| 🗄️ **No database** | The YAML file is the only persistent state. Metrics and recent logs live in bounded memory and reset on restart. |
+| 🔒 **Quiet & transparent** | Upstream status codes pass through unchanged; hop-by-hop headers handled per spec; no retries, no surprises. |
 
-## Quick start
+## ⚡ Performance
 
-**1. Get the binary** — download a release, or build from source (requires Go ≥ 1.26 and Node.js):
+Data plane is allocation-light and never buffers a body. On an Apple M1 against a local upstream:
+
+- **~47 µs** median added latency per request — the PRD target is p99 **< 5 ms**, a ~100× margin
+- **~2.4 GB/s** streamed throughput
+- **256 MiB** request bodies forwarded with an essentially **flat heap** (streamed, not buffered)
+- **200+** concurrent SSE streams held open with no goroutine growth
+
+Numbers vary by machine — reproduce them with `go test -bench . ./test/integration`.
+
+## 🚀 Quick start
+
+**1. Build** (needs Go ≥ 1.26 and Node.js) — or grab a release binary:
 
 ```bash
 git clone https://github.com/kites262/piperouter
 cd piperouter
-make build          # → dist/piperouter (WebUI embedded)
+make build          # → dist/piperouter  (WebUI embedded)
 ```
 
-**2. Create `piperouter.yaml`:**
+**2. Write `piperouter.yaml`:**
 
 ```yaml
 version: 1
@@ -48,8 +83,7 @@ server:
   proxy:
     listen: ":8080"
   admin:
-    enabled: true
-    listen: "127.0.0.1:9090"
+    listen: "127.0.0.1:9090"   # admin API + WebUI, loopback only
 
 transports:
   - name: jp-proxy
@@ -61,167 +95,189 @@ routes:
     prefix: /openai
     target: https://api.openai.com/v1
     strip_prefix: true
-    transport: jp-proxy
+    transport: jp-proxy        # this route goes out through the HTTP proxy
 
   - name: github
     prefix: /github
-    target: https://api.github.com
+    target: https://api.github.com   # transport defaults to built-in "direct"
 ```
 
-**3. Run it:**
+**3. Run & test:**
 
 ```bash
 ./dist/piperouter serve --config piperouter.yaml
-```
 
-**4. Test it:**
-
-```bash
-# → https://api.github.com/repos/golang/go (direct)
+# → https://api.github.com/repos/golang/go   (direct)
 curl http://127.0.0.1:8080/github/repos/golang/go
 
-# → https://api.openai.com/v1/models (through jp-proxy);
-#   PipeRouter passes your Authorization header through untouched
+# → https://api.openai.com/v1/models   (through jp-proxy);
+#   your Authorization header is forwarded untouched
 curl http://127.0.0.1:8080/openai/models -H "Authorization: Bearer $OPENAI_API_KEY"
 ```
 
-Open the WebUI at [http://127.0.0.1:9090](http://127.0.0.1:9090).
+Then open the console at **[http://127.0.0.1:9090](http://127.0.0.1:9090)**.
 
-A fully commented configuration lives at [`configs/example.yaml`](configs/example.yaml); the complete field reference is in [`docs/configuration.md`](docs/configuration.md).
+> A fully-commented config lives at [`configs/example.yaml`](configs/example.yaml); every field, default
+> and validation rule is documented in [`docs/configuration.md`](docs/configuration.md).
 
-## WebUI
+## 🖥️ WebUI
 
-The admin server embeds a Vue 3 single-page console:
+The admin server embeds a Vue 3 single-page console — a dark-first "infrastructure console" with a
+light theme too (toggle in the sidebar; your choice is remembered, first visit follows your OS).
 
-- **Dashboard** — service status, uptime, config revision, request totals, error rate, P95 latency, route summaries and recent errors at a glance
-- **Routes** — list, create, edit, enable/disable, delete and test routes; the editor validates names, prefixes and targets live and previews the final URL mapping before you save
-- **Route detail** — the pipeline (prefix → rewrite → transport → target) plus per-route request counts, error rate, P50/P95/P99 latency and recent requests
-- **Transports** — manage HTTP/SOCKS5 outbound proxies and see which routes use them; the built-in `direct` transport is shown but immutable
-- **Logs** — the in-memory recent-request ring buffer, filterable by route and status class (bodies and sensitive headers are never recorded)
-- **Diagnostics** — send a test request through a real route or transport and see each stage: route resolution, final URL, connection, TLS, HTTP status, timing
-- **Settings** — listeners, TLS paths, log level and log-buffer capacity
+| Module | What it does |
+| --- | --- |
+| **Dashboard** | Service status, uptime, config revision, request totals, error rate, P95 latency, route summaries and recent errors — health at a glance. |
+| **Routes** | List, create, edit, enable/disable, delete and test routes. The editor validates names, prefixes and targets live and previews the final URL mapping before you save. |
+| **Route detail** | The pipeline (prefix → rewrite → transport → target) plus per-route counts, error rate, P50/P95/P99 latency and recent requests. |
+| **Transports** | Manage HTTP/SOCKS5 proxies and see which routes use each. The built-in `direct` transport is shown but immutable. |
+| **Logs** | The in-memory recent-request ring buffer, filterable by route and status class. Bodies and sensitive headers are never recorded. |
+| **Diagnostics** | Send a test request through a real route or transport and watch every stage: resolution, final URL, connection, TLS, HTTP status, timing. |
+| **Settings** | Listeners, TLS paths, log level and log-buffer capacity. |
 
-The console is a dark-first "infrastructure console" and ships a light theme too — toggle it from the sidebar; your choice is remembered and the first visit follows your OS preference.
+Everything the UI does goes through the JSON Admin API under `/api/v1`
+(spec: [`api/openapi.yaml`](api/openapi.yaml)) — so you can script the same operations with `curl`.
 
-Everything the WebUI does goes through the JSON Admin API under `/api/v1` (spec: [`api/openapi.yaml`](api/openapi.yaml)), so you can script the same operations with `curl`.
+## 🧭 How routing works
 
-## CLI reference
+Matching is **path-prefix only**, on segment boundaries, **longest prefix wins**:
 
 ```text
-piperouter [serve] [flags]    run the proxy (default command)
-piperouter validate [flags]   validate a configuration file and exit
-piperouter version            print version information
-piperouter help               print usage
+Routes: /api   /api/openai   /api/openai/v1
+GET /api/openai/v1/models   →  matched by  /api/openai/v1
+GET /api/openai/models      →  matched by  /api/openai
+GET /apiv2/...              →  404 route_not_found   (not a segment boundary)
 ```
 
-Flags for `serve`:
+Rewrite joins the target base path with the remaining request path, preserving the query string
+and percent-encoding exactly:
 
-| Flag | Description |
-| --- | --- |
-| `--config string` | path to the configuration file (default `piperouter.yaml`) |
-| `--proxy-listen string` | override `server.proxy.listen` (runtime only, not persisted) |
-| `--admin-listen string` | override `server.admin.listen` (runtime only, not persisted) |
-| `--disable-admin` | disable the admin API and WebUI |
-| `--disable-web` | disable the WebUI (admin API stays on) |
-| `--log-level string` | override `runtime.log_level` (`debug`\|`info`\|`warn`\|`error`) |
+```text
+prefix /openai   target https://api.example.com/v1   strip_prefix: true
+  /openai/chat/completions?stream=true   →   https://api.example.com/v1/chat/completions?stream=true
 
-Flags for `validate`:
+strip_prefix: false
+  /openai/chat   →   https://api.example.com/v1/openai/chat
+```
 
-| Flag | Description |
-| --- | --- |
-| `--config string` | path to the configuration file (default `piperouter.yaml`) |
+The `Host` header is set to the target host. Connection failures map to `502`, header timeouts to
+`504`, and a client that hangs up mid-request gets no response written — see the full error table in
+[`docs/configuration.md`](docs/configuration.md).
 
-CLI flags take precedence over the configuration file and are never written back to it. `validate` exits `0` and prints `configuration valid`, or exits non-zero listing every problem, one per line.
+## ⚙️ Configuration
 
-## Configuration overview
-
-The YAML file is the single source of truth. The two core objects:
+The YAML file is the single source of truth. Two core objects:
 
 **Route** — one prefix → target mapping:
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `name` | string | yes | — | unique name, `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` |
+| `name` | string | yes | — | unique, `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` |
 | `enabled` | bool | no | `true` | disabled routes never match |
-| `prefix` | string | yes | — | path prefix, starts with `/`, unique; non-root prefix must not end with `/` |
+| `prefix` | string | yes | — | path prefix; starts with `/`, unique; non-root must not end with `/` |
 | `target` | string | yes | — | absolute `http`/`https` URL; no query, fragment or userinfo |
-| `strip_prefix` | bool | no | `true` | remove the matched prefix before joining with the target path |
-| `transport` | string | no | `direct` | name of the outbound transport to use |
+| `strip_prefix` | bool | no | `true` | remove the matched prefix before joining the target path |
+| `transport` | string | no | `direct` | outbound transport to use |
 
 **Transport** — one outbound link:
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `name` | string | yes | unique name (`direct` is reserved for the built-in transport) |
+| `name` | string | yes | unique (`direct` is reserved for the built-in transport) |
 | `type` | enum | yes | `http` or `socks5` |
-| `url` | string | yes | proxy URL (`http://host:port` / `socks5://host:port`); credentials are not supported |
+| `url` | string | yes | `http://host:port` / `socks5://host:port`; credentials not supported |
 
-The built-in `direct` transport (no proxy) always exists and must not be declared.
+The built-in `direct` transport (no proxy) always exists and must not be declared. Global sections
+cover listeners, optional proxy TLS, log level, recent-log buffer size and outbound timeouts.
 
-Global sections cover listeners, optional proxy TLS, log level, the recent-log buffer size and outbound timeouts. See [`docs/configuration.md`](docs/configuration.md) for every field, default, validation rule, the exact matching/rewrite semantics and the error-mapping table.
+## 🔒 Security
 
-## Security
+> PipeRouter v0.1 has **no authentication** on the admin API or WebUI. Treat the admin plane as
+> privileged and design your deployment accordingly.
 
-PipeRouter v0.1 has **no authentication** on the admin API or WebUI. Design accordingly:
+- The admin listener defaults to **`127.0.0.1:9090` — loopback only**, where it also enforces a
+  loopback `Host` check to blunt DNS-rebinding. Keep it that way on any shared or internet-facing
+  host; binding a non-loopback address logs a prominent security warning (and relaxes the `Host`
+  check so a fronting proxy can forward its own host name).
+- To reach the WebUI remotely, front it with something you trust: an SSH tunnel
+  (`ssh -N -L 9090:127.0.0.1:9090 you@server`), a VPN (WireGuard/Tailscale), or an authenticating
+  reverse proxy such as Caddy. See [`docs/deployment.md`](docs/deployment.md).
+- The admin API never emits CORS headers and rejects cross-origin mutating requests.
+- Access logs and the WebUI never record bodies, query strings, or sensitive headers
+  (`Authorization`, `Cookie`, …). Proxy/target URLs with embedded credentials are rejected.
 
-- The admin listener defaults to `127.0.0.1:9090` — **loopback only**. Keep it that way on any shared or internet-facing machine. Binding a non-loopback address makes PipeRouter log a prominent security warning.
-- To reach the WebUI remotely, put something you trust in front of it: an SSH tunnel (`ssh -N -L 9090:127.0.0.1:9090 you@server`), a VPN (WireGuard/Tailscale), or a reverse proxy such as Caddy with authentication and TLS. See [`docs/deployment.md`](docs/deployment.md).
-- The admin API never emits CORS headers and rejects mutating requests with a cross-origin `Origin` header.
-- Access logs and the WebUI never record request/response bodies, query strings, or sensitive headers such as `Authorization` and `Cookie`.
-- Proxy URLs and targets must not contain credentials (`user:pass@`) — validation rejects them.
+> **YAML caveat:** saving from the WebUI re-serializes the file as canonical YAML — **comments, key
+> order and formatting are lost** (the previous version is kept as `<config>.bak`). Keep a commented
+> master copy elsewhere if you care about it.
 
-> **YAML caveat:** saving from the WebUI re-serializes the file as canonical YAML. **Comments, key order and hand formatting are lost.** The previous version is kept as `<config>.bak`, but keep a commented master copy elsewhere if you care about it.
+## 📦 Deployment
 
-## Deployment
+PipeRouter does **not** do ACME. For public HTTPS, terminate TLS in Caddy (recommended) or point
+`server.proxy.tls` at existing certificate files.
 
-See [`docs/deployment.md`](docs/deployment.md) for systemd units, Docker/Compose, a Caddy-in-front TLS walkthrough and admin-exposure guidance. Deployment files live in [`deploy/`](deploy/).
+```text
+Client ──HTTPS──▶ Caddy ──HTTP──▶ PipeRouter ──▶ upstreams
+```
 
-PipeRouter does not do ACME. For public HTTPS, either terminate TLS in Caddy (recommended) or point `server.proxy.tls` at existing certificate files.
+A 3-stage **distroless Docker image (~17 MB)**, a `docker-compose` + Caddy example and systemd unit
+live in [`deploy/`](deploy/); the full walkthrough is in [`docs/deployment.md`](docs/deployment.md).
 
-## Development
+## 🛠️ CLI
+
+```text
+piperouter [serve] [flags]     run the proxy (default command)
+piperouter validate [flags]    validate a configuration file and exit
+piperouter version             print version information
+```
+
+| Flag (for `serve`) | Description |
+| --- | --- |
+| `--config <path>` | configuration file (default `piperouter.yaml`) |
+| `--proxy-listen <addr>` | override `server.proxy.listen` (runtime only, not persisted) |
+| `--admin-listen <addr>` | override `server.admin.listen` (runtime only, not persisted) |
+| `--disable-admin` | disable the admin API and WebUI |
+| `--disable-web` | disable the WebUI (admin API stays on) |
+| `--log-level <level>` | `debug` \| `info` \| `warn` \| `error` |
+
+CLI flags take precedence over the file and are never written back. `validate` exits `0` with
+`configuration valid`, or non-zero listing every problem one per line.
+
+## 🧪 Development
 
 ```bash
-make build      # full release build: frontend → embed → go test -race → dist/piperouter
-make backend    # compile the Go binary only (uses whatever is in internal/webui/dist)
-make frontend   # npm install + build the WebUI into web/dist
-make embed      # copy web/dist → internal/webui/dist for go:embed
-make generate   # regenerate the OpenAPI TypeScript client from api/openapi.yaml
+make build      # full release: frontend → embed → go test -race → dist/piperouter
 make test       # go test -race ./...
-make vet        # go vet ./...
-make run        # build backend and run with configs/example.yaml
-make clean      # remove dist/ and web/dist
+make run        # build backend, run with configs/example.yaml
+make generate   # regenerate the OpenAPI TypeScript client from api/openapi.yaml
 ```
 
-For frontend work, run the backend and the Vite dev server side by side:
+Frontend work — run the backend and the Vite dev server side by side (the dev server proxies `/api`
+to `127.0.0.1:9090`, keeping same-origin checks happy):
 
 ```bash
-# terminal 1 — backend (admin API on 127.0.0.1:9090)
-make run
-
-# terminal 2 — WebUI with hot module reload
-cd web && npm install && npm run dev
+make run                              # terminal 1 — backend
+cd web && npm install && npm run dev  # terminal 2 — WebUI with HMR
 ```
-
-The dev server proxies `/api` to `http://127.0.0.1:9090` (see `web/vite.config.ts`), keeping the backend's same-origin checks happy.
-
-Repository layout:
 
 ```text
 cmd/piperouter/    CLI entry point (serve | validate | version)
 internal/          Go packages: proxy, router, transport, config, runtime,
                    metrics, logging, diagnostics, api, webui, app
 web/               Vue 3 + TypeScript + Vite + Tailwind WebUI
-api/openapi.yaml   Admin API contract (frontend client is generated from it)
-configs/           example configuration
-deploy/            Dockerfile, docker-compose, Caddy examples
-docs/              configuration & deployment guides, architecture contract
-test/              integration tests
+api/openapi.yaml   Admin API contract (the frontend client is generated from it)
+configs/  deploy/  docs/  test/
 ```
 
-## Non-goals
+## 🚫 Non-goals
 
-PipeRouter stays a simple, quiet pipe. v0.1 deliberately does **not** do: credential management or header injection, user accounts/RBAC/multi-tenancy, body parsing or rewriting, token counting/billing/quotas/rate limiting, load balancing, retries or transport fallback, health checks or service discovery, TCP/UDP proxying, plugins, ACME/automatic certificates, or persistent log/metric storage. If a feature requires understanding *who* is calling or *what* the request means, it does not belong here.
+PipeRouter stays a simple, quiet pipe. It deliberately does **not** do: credential management or
+header injection, user accounts / RBAC / multi-tenancy, body parsing or rewriting, token counting /
+billing / quotas / rate limiting, load balancing, retries or transport fallback, health checks or
+service discovery, TCP/UDP proxying, plugins, ACME, or persistent log/metric storage.
 
-## License
+> If a feature needs to understand *who* is calling or *what* a request means, it doesn't belong
+> here. PipeRouter only decides where a request goes, how its path changes, and which link it takes.
+
+## 📄 License
 
 Released under the [MIT License](LICENSE).
