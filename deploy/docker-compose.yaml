@@ -1,0 +1,62 @@
+# PipeRouter + Caddy deployment (PRD §17.1, §21.2).
+#
+#   Client ──HTTPS──▶ caddy ──HTTP──▶ piperouter ──▶ targets
+#
+# Caddy owns TLS (self-signed for the localhost demo, ACME in production —
+# PipeRouter deliberately implements neither). PipeRouter does the prefix
+# routing, path rewriting and outbound transport selection.
+#
+#   docker compose -f deploy/docker-compose.yaml up -d
+#   curl -k https://localhost/httpbin/get          # via Caddy (TLS)
+#   curl http://127.0.0.1:8080/httpbin/get         # proxy, direct
+#   open http://127.0.0.1:9090                     # admin WebUI (host-only)
+
+services:
+  piperouter:
+    image: piperouter:0.1.0
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        VERSION: 0.1.0
+    restart: unless-stopped
+    volumes:
+      # Same file the image bakes in as its default — mounted so route edits
+      # don't require a rebuild (hot reload picks up host-side saves).
+      # Caveat: WebUI "save" uses an atomic rename that cannot replace a
+      # single-file mount point; to persist WebUI edits mount a directory
+      # (e.g. "./config:/etc/piperouter") instead.
+      - ./piperouter.yaml:/etc/piperouter/piperouter.yaml
+    ports:
+      # Data plane. Default posture is host-loopback only, since in this
+      # topology business traffic should arrive through Caddy (HTTPS).
+      # Change to "8080:8080" only if you want to expose plain HTTP directly.
+      - "127.0.0.1:8080:8080"
+      # Control plane (admin API + WebUI) — NO AUTHENTICATION. Inside the
+      # container it listens on 0.0.0.0 (required to be reachable through a
+      # published port at all; the container's 127.0.0.1 is unreachable from
+      # outside), which makes PipeRouter log a startup SECURITY WARNING —
+      # expected here. The real guard is this mapping: "127.0.0.1:9090:9090"
+      # publishes it ONLY on the host's loopback. Never change it to
+      # "9090:9090" without an authenticating reverse proxy or firewall in
+      # front (PRD §15.3).
+      - "127.0.0.1:9090:9090"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - piperouter
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificates + ACME account (must persist)
+      - caddy_config:/config
+    ports:
+      - "443:443"
+      # Port 80 is needed for the HTTP→HTTPS redirect and for the ACME
+      # HTTP-01 challenge when you enable the production block in Caddyfile.
+      - "80:80"
+
+volumes:
+  caddy_data:
+  caddy_config:

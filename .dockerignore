@@ -1,0 +1,26 @@
+# Keep the Docker build context small and reproducible.
+.git
+.claude
+.idea
+.vscode
+.DS_Store
+
+# Build artifacts — the image builds everything itself.
+dist/
+web/dist/
+web/node_modules/
+# The embedded UI is produced by the frontend stage, never taken from the host.
+internal/webui/dist/
+
+# Local runtime files.
+*.log
+piperouter.yaml.bak
+coverage.out
+*.test
+
+# Docs and deployment collateral not needed inside the build
+# (deploy/piperouter.yaml IS needed — stage 3 copies it).
+docs/
+PRD.md
+deploy/docker-compose.yaml
+deploy/Caddyfile

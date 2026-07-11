@@ -1,0 +1,85 @@
+# PipeRouter example configuration (PRD §6.2).
+#
+# This file is the single source of truth: everything the WebUI edits is
+# persisted right here. NOTE: saving from the WebUI rewrites the file in
+# canonical YAML and STRIPS ALL COMMENTS — keep a commented copy elsewhere
+# if you want to preserve these notes.
+#
+# Check a config without starting the server:
+#   piperouter validate --config configs/example.yaml
+
+# Config schema version. Only 1 is supported.
+version: 1
+
+server:
+  proxy:
+    # Data-plane listener: all proxied business traffic enters here.
+    listen: ":8080"
+
+    # Optional TLS for the proxy listener (PRD §17.2). PipeRouter does NOT
+    # do ACME/auto-renewal — bring your own certificate, or terminate TLS
+    # in front (e.g. Caddy/nginx). The certificate is loaded at startup;
+    # an invalid cert/key pair prevents the server from starting.
+    tls:
+      enabled: false
+      cert_file: ""
+      key_file: ""
+    # Example with TLS enabled:
+    # tls:
+    #   enabled: true
+    #   cert_file: /etc/piperouter/fullchain.pem
+    #   key_file: /etc/piperouter/private.key
+
+  admin:
+    # Control-plane listener: Admin API + WebUI. It has NO authentication,
+    # so keep it on loopback; a non-loopback address logs a big warning.
+    enabled: true
+    listen: "127.0.0.1:9090"
+
+  web:
+    # WebUI is served by the admin server; with admin.enabled=false this
+    # value is ignored and the UI is off.
+    enabled: true
+
+runtime:
+  # Application log level: debug | info | warn | error.
+  log_level: info
+  # In-memory ring buffer of recent access-log entries shown in the WebUI.
+  # 0 disables the buffer. Nothing is ever written to disk.
+  recent_logs: 1000
+
+# Outbound links (PRD §5.2). The built-in transport "direct" (no proxy)
+# always exists and must not be declared here. Proxy URLs must not contain
+# credentials.
+transports:
+  # HTTP proxy: requests to the target are sent through HTTP CONNECT.
+  - name: jp-proxy
+    type: http
+    url: http://127.0.0.1:7890
+
+  # SOCKS5 proxy: hostnames are resolved by the proxy itself.
+  - name: us-socks
+    type: socks5
+    url: socks5://127.0.0.1:1080
+
+# Prefix routes (PRD §5.1). Longest matching prefix wins; matching is
+# path-boundary aware (/openai matches /openai and /openai/..., never
+# /openai2). Targets must be absolute http/https URLs without query,
+# fragment or userinfo.
+routes:
+  # /openai/chat/completions → https://api.openai.com/v1/chat/completions
+  # (strip_prefix: true removes /openai before joining with the target path)
+  - name: openai
+    enabled: true
+    prefix: /openai
+    target: https://api.openai.com/v1
+    strip_prefix: true
+    transport: jp-proxy
+
+  # /github/repos/... → https://api.github.com/repos/... via direct egress.
+  - name: github
+    enabled: true
+    prefix: /github
+    target: https://api.github.com
+    strip_prefix: true
+    transport: direct

@@ -1,0 +1,25 @@
+# Caddy in front of PipeRouter (PRD §17.1): Caddy terminates HTTPS and
+# forwards plain HTTP to the piperouter service. PipeRouter does not do
+# ACME/auto-certificates — Caddy owns everything TLS.
+#
+#   Client ──HTTPS──▶ Caddy ──HTTP──▶ piperouter:8080 ──▶ targets
+
+# --- Demo: https://localhost with a self-signed certificate ---------------
+# `tls internal` makes Caddy mint its own local CA + leaf cert, so this works
+# with zero setup. curl needs -k (or trust Caddy's root CA from the
+# caddy_data volume under /data/caddy/pki/authorities/local/root.crt).
+localhost {
+	tls internal
+	reverse_proxy piperouter:8080
+}
+
+# --- Production: real domain with automatic ACME certificates -------------
+# Uncomment and set your domain (DNS must point at this host, ports 80+443
+# must be reachable from the internet). Caddy then obtains and renews
+# Let's Encrypt certificates automatically — no PipeRouter involvement.
+#
+# proxy.example.com {
+# 	# Optional: where Let's Encrypt sends expiry notices.
+# 	# tls admin@example.com
+# 	reverse_proxy piperouter:8080
+# }
