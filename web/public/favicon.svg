@@ -1,6 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#0a0e1a"/>
-  <path d="M7 22h5.5c3.5 0 3.5-12 7-12H25" stroke="#6d7cff" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-  <circle cx="7" cy="22" r="2.6" fill="#6d7cff"/>
-  <circle cx="25" cy="10" r="2.6" fill="#34d399"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- PipeRouter mark: the same lucide "waypoints" glyph as the sidebar logo,
+       on a solid accent badge so it stays legible on any browser-tab color. -->
+  <rect width="24" height="24" rx="5.5" fill="#6d7cff" />
+  <g
+    transform="translate(12 12) scale(0.82) translate(-12 -12)"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="2.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="4.5" r="2.5" />
+    <path d="m10.2 6.3-3.9 3.9" />
+    <circle cx="4.5" cy="12" r="2.5" />
+    <path d="M7 12h10" />
+    <circle cx="19.5" cy="12" r="2.5" />
+    <path d="m13.8 17.7 3.9-3.9" />
+    <circle cx="12" cy="19.5" r="2.5" />
+  </g>
 </svg>

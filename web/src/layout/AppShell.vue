@@ -3,9 +3,11 @@ import {
   Activity,
   Cable,
   LayoutDashboard,
+  Moon,
   Route as RouteIcon,
   ScrollText,
   Settings,
+  Sun,
   Waypoints,
 } from 'lucide-vue-next'
 import { computed, provide, ref } from 'vue'
@@ -17,17 +19,27 @@ import ConfigErrorBanner from '@/components/ConfigErrorBanner.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { usePolling } from '@/composables/usePolling'
 import { statusKey } from '@/composables/useStatus'
+import { useTheme } from '@/composables/useTheme'
 
 const route = useRoute()
+const { theme, toggle: toggleTheme } = useTheme()
 
-const nav = [
+// Primary navigation; Settings is pinned separately at the bottom of the
+// sidebar so day-to-day views are grouped apart from configuration.
+const primaryNav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/routes', label: 'Routes', icon: RouteIcon },
   { to: '/transports', label: 'Transports', icon: Cable },
   { to: '/logs', label: 'Logs', icon: ScrollText },
   { to: '/diagnostics', label: 'Diagnostics', icon: Activity },
-  { to: '/settings', label: 'Settings', icon: Settings },
 ] as const
+
+// Shared row styling for sidebar links (primary nav + the pinned Settings).
+function navClass(active: boolean): string {
+  return active
+    ? 'bg-accent-soft font-medium text-accent'
+    : 'text-fg-secondary hover:bg-surface-raised hover:text-fg'
+}
 
 function isActive(to: string): boolean {
   if (to === '/') return route.path === '/'
@@ -82,22 +94,39 @@ const shortRevision = computed(() => {
       </div>
       <nav class="flex-1 space-y-1 overflow-y-auto p-3">
         <RouterLink
-          v-for="item in nav"
+          v-for="item in primaryNav"
           :key="item.to"
           :to="item.to"
           class="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors duration-150"
-          :class="
-            isActive(item.to)
-              ? 'bg-accent-soft font-medium text-accent'
-              : 'text-fg-secondary hover:bg-surface-raised hover:text-fg'
-          "
+          :class="navClass(isActive(item.to))"
         >
           <component :is="item.icon" class="h-4 w-4 shrink-0" />
           {{ item.label }}
         </RouterLink>
       </nav>
-      <div class="border-t border-border px-4 py-3">
-        <p class="font-mono text-[10px] text-fg-muted">admin · loopback only</p>
+
+      <!-- Pinned bottom: configuration + preferences, kept apart from the
+           day-to-day views above (PRD §18 low-noise console). -->
+      <div class="space-y-1 border-t border-border p-3">
+        <RouterLink
+          to="/settings"
+          class="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors duration-150"
+          :class="navClass(isActive('/settings'))"
+        >
+          <Settings class="h-4 w-4 shrink-0" />
+          Settings
+        </RouterLink>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-fg-secondary transition-colors duration-150 hover:bg-surface-raised hover:text-fg"
+          :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`"
+          :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`"
+          @click="toggleTheme"
+        >
+          <component :is="theme === 'dark' ? Sun : Moon" class="h-4 w-4 shrink-0" />
+          {{ theme === 'dark' ? 'Light mode' : 'Dark mode' }}
+        </button>
+        <p class="px-3 pt-1 font-mono text-[10px] text-fg-muted">admin · loopback only</p>
       </div>
     </aside>
 

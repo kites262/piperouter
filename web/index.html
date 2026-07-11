@@ -3,14 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>PipeRouter</title>
+    <script>
+      // Resolve the theme BEFORE first paint to avoid a flash: a stored choice
+      // wins, otherwise follow the OS. Mirrors useTheme.ts (same storage key +
+      // system fallback); wrapped so a blocked localStorage never breaks boot.
+      (function () {
+        try {
+          var t = localStorage.getItem('piperouter-theme')
+          if (t !== 'dark' && t !== 'light') {
+            t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+          }
+          document.documentElement.dataset.theme = t
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark'
+        }
+      })()
+    </script>
     <style>
-      /* Paint dark immediately — no white flash before CSS loads. */
+      /* Paint the resolved theme's background immediately — no flash before the
+         bundled CSS loads. Values mirror --color-bg in styles/main.css. */
       html {
         background-color: #0a0e1a;
         color-scheme: dark;
+      }
+      html[data-theme="light"] {
+        background-color: #f3f5fb;
+        color-scheme: light;
       }
     </style>
   </head>

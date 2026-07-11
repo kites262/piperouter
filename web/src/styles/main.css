@@ -131,6 +131,72 @@
   background-color: rgb(148 163 197 / 0.32);
 }
 
+/*
+ * ============================================================================
+ * Light theme — activated by <html data-theme="light"> (see useTheme.ts and
+ * the inline FOUC script in index.html). Only redefines the color tokens plus
+ * the few raw-color surfaces (body ambience, selection, scrollbars); every
+ * component consumes the tokens, so nothing else needs to change. Left
+ * UNLAYERED so it always wins over the @theme defaults regardless of cascade
+ * layers. Dark remains the default (and the no-JS fallback).
+ * ============================================================================
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Background & surfaces — cool, slightly blue-tinted light (not stark white) */
+  --color-bg: #f3f5fb;
+  --color-bg-deep: #e8ecf5;
+  --color-surface: #ffffff;
+  --color-surface-raised: #eef1f8;
+  --color-surface-glass: rgb(255 255 255 / 0.72);
+
+  /* Borders — faint dark hairlines on light */
+  --color-border: rgb(15 23 42 / 0.1);
+  --color-border-strong: rgb(15 23 42 / 0.18);
+
+  /* Text — dark slate, kept off pure-black for a softer instrument feel */
+  --color-fg: #1b2437;
+  --color-fg-secondary: #545f79;
+  --color-fg-muted: #6b7590;
+
+  /* Accent — deepened so it keeps contrast on white (as text/icons) */
+  --color-accent: #5560e6;
+  --color-accent-hover: #454fd0;
+  --color-accent-soft: rgb(85 96 230 / 0.12);
+
+  /* Status — darkened variants so badge/label text stays legible on light */
+  --color-success: #047857;
+  --color-success-soft: rgb(4 120 87 / 0.12);
+  --color-warning: #b45309;
+  --color-warning-soft: rgb(180 83 9 / 0.12);
+  --color-danger: #dc2626;
+  --color-danger-soft: rgb(220 38 38 / 0.1);
+}
+
+:root[data-theme="light"] body {
+  /* Softer liquid ambience tuned for a light canvas. */
+  background-image:
+    radial-gradient(1100px 700px at 85% -10%, rgb(85 96 230 / 0.07), transparent 60%),
+    radial-gradient(900px 640px at -15% 110%, rgb(56 189 248 / 0.07), transparent 60%);
+}
+
+:root[data-theme="light"] ::selection {
+  background-color: rgb(85 96 230 / 0.22);
+}
+
+:root[data-theme="light"] * {
+  scrollbar-color: rgb(71 85 105 / 0.3) transparent;
+}
+
+:root[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background-color: rgb(71 85 105 / 0.28);
+}
+
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(71 85 105 / 0.45);
+}
+
 /* Vue <Transition> helpers — subtle 150-200ms motion only (PRD §18.4). */
 .page-enter-active {
   transition:
