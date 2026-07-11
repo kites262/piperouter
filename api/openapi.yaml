@@ -386,6 +386,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/MetricsSnapshot'
 
+  /api/v1/metrics/history:
+    get:
+      tags: [metrics]
+      operationId: getMetricsHistory
+      summary: Get the rolling 48h request history
+      description: |
+        Fixed series of 49 hourly UTC buckets (48 sealed + the current
+        partial hour), oldest first. Hours with no recorded traffic —
+        including hours before process start — are zero-filled so the
+        series is always contiguous. In-memory only; survives config
+        reloads, resets on restart. WebSocket connections count in the
+        bucket where they ended.
+      responses:
+        '200':
+          description: Current 48h history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsHistory'
+
   /api/v1/logs:
     get:
       tags: [logs]
@@ -1051,6 +1071,63 @@ components:
           format: int64
           minimum: 0
           description: Access-log entries dropped by the ring buffer due to overflow.
+
+    MetricsHistoryBucket:
+      type: object
+      description: One hourly bucket of the 48h request history.
+      required:
+        - start
+        - success
+        - errors
+      properties:
+        start:
+          type: string
+          format: date-time
+          description: UTC start of the hour this bucket covers.
+        success:
+          type: integer
+          format: int64
+          minimum: 0
+        errors:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 5xx responses plus upstream errors, same rule as error_requests.
+
+    MetricsHistoryTotals:
+      type: object
+      description: Sums over the whole 48h window.
+      required:
+        - success
+        - errors
+      properties:
+        success:
+          type: integer
+          format: int64
+          minimum: 0
+        errors:
+          type: integer
+          format: int64
+          minimum: 0
+
+    MetricsHistory:
+      type: object
+      description: Rolling 48h success/error series for the dashboard charts.
+      required:
+        - bucket_seconds
+        - buckets
+        - totals
+      properties:
+        bucket_seconds:
+          type: integer
+          description: Width of one bucket in seconds (3600).
+        buckets:
+          type: array
+          description: Exactly 49 buckets oldest→newest; last is the current partial hour.
+          items:
+            $ref: '#/components/schemas/MetricsHistoryBucket'
+        totals:
+          $ref: '#/components/schemas/MetricsHistoryTotals'
 
     AccessLogEntry:
       type: object

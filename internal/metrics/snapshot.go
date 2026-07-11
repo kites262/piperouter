@@ -24,6 +24,28 @@ type RouteSnapshot struct {
 	LastRequestAt  *time.Time     `json:"last_request_at"` // nil if never
 }
 
+// HistoryBucket is one hourly bucket of the 48h request history. Start is
+// the UTC beginning of the hour the bucket covers.
+type HistoryBucket struct {
+	Start   time.Time `json:"start"`
+	Success uint64    `json:"success"`
+	Errors  uint64    `json:"errors"` // 5xx + upstream errors, same rule as Snapshot.ErrorRequests
+}
+
+// HistoryTotals sums the buckets of one history window.
+type HistoryTotals struct {
+	Success uint64 `json:"success"`
+	Errors  uint64 `json:"errors"`
+}
+
+// HistorySnapshot is the fixed-length 48h series: buckets oldest→newest,
+// the last one being the current partial hour.
+type HistorySnapshot struct {
+	BucketSeconds int             `json:"bucket_seconds"`
+	Buckets       []HistoryBucket `json:"buckets"`
+	Totals        HistoryTotals   `json:"totals"`
+}
+
 // Snapshot is a point-in-time view of all metrics (PRD §13.2).
 type Snapshot struct {
 	StartedAt        time.Time       `json:"started_at"`

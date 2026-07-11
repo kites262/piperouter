@@ -439,6 +439,10 @@ func (s *server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *server) handleMetricsHistory(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.deps.Metrics.History())
+}
+
 func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 

@@ -70,13 +70,19 @@ type Registry struct {
 
 	mu     sync.RWMutex
 	routes map[string]*routeMetrics
+
+	// history is app-lifetime like the registry itself: it survives config
+	// reloads (SetRoutes never touches it) and resets on process restart.
+	history *history
 }
 
 // NewRegistry returns an empty registry; StartedAt is captured now.
 func NewRegistry() *Registry {
+	now := time.Now()
 	return &Registry{
-		startedAt: time.Now(),
+		startedAt: now,
 		routes:    make(map[string]*routeMetrics),
+		history:   newHistory(now),
 	}
 }
 
@@ -168,12 +174,15 @@ func (r *Registry) bumpStream(kind StreamKind, delta int64) {
 // or removed names are dropped silently, never auto-created (§22.2).
 // A request is an error when status >= 500 or the upstream failed.
 func (r *Registry) Observe(route string, status int, upstreamErr bool, latency time.Duration) {
+	now := time.Now()
 	ms := float64(latency) / float64(time.Millisecond)
+	isErr := status >= 500 || upstreamErr
 	r.totalRequests.Add(1)
-	if status >= 500 || upstreamErr {
+	if isErr {
 		r.errorRequests.Add(1)
 	}
 	r.latency.observe(ms)
+	r.history.observe(now, isErr)
 
 	rm := r.route(route)
 	if rm == nil {
@@ -194,7 +203,12 @@ func (r *Registry) Observe(route string, status int, upstreamErr bool, latency t
 		rm.upstreamErrors.Add(1)
 	}
 	rm.latency.observe(ms)
-	rm.lastRequestAt.Store(time.Now().UnixNano())
+	rm.lastRequestAt.Store(now.UnixNano())
+}
+
+// History returns the rolling 48h success/error series.
+func (r *Registry) History() HistorySnapshot {
+	return r.history.snapshot(time.Now())
 }
 
 // Snapshot returns a consistent-enough point-in-time view. It is cheap:

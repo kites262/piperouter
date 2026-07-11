@@ -638,6 +638,30 @@ func TestMetricsEndpoints(t *testing.T) {
 		t.Errorf("total_requests = %v, want 1", m["total_requests"])
 	}
 
+	// 48h history: totals-only assertions — bucket placement would flake
+	// across a real hour boundary (placement is covered in metrics with an
+	// injected clock).
+	resp, body = env.do(t, "GET", "/api/v1/metrics/history", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("metrics history = %d (%s)", resp.StatusCode, body)
+	}
+	var hist metrics.HistorySnapshot
+	mustJSON(t, body, &hist)
+	if hist.BucketSeconds != 3600 {
+		t.Errorf("bucket_seconds = %d, want 3600", hist.BucketSeconds)
+	}
+	if len(hist.Buckets) != 49 {
+		t.Errorf("len(buckets) = %d, want 49", len(hist.Buckets))
+	}
+	if hist.Totals.Success != 1 || hist.Totals.Errors != 0 {
+		t.Errorf("history totals = %+v, want success=1 errors=0", hist.Totals)
+	}
+	for i := 1; i < len(hist.Buckets); i++ {
+		if hist.Buckets[i].Start.Sub(hist.Buckets[i-1].Start) != time.Hour {
+			t.Fatalf("history buckets not contiguous at %d", i)
+		}
+	}
+
 	// Per-route metrics for a configured, observed route.
 	resp, body = env.do(t, "GET", "/api/v1/routes/alpha/metrics", nil)
 	if resp.StatusCode != http.StatusOK {
