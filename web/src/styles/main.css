@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+/*
+ * PipeRouter — "Modern Infrastructure Console" design tokens (PRD §18).
+ * Dark-only theme: near-black blue background, dark translucent surfaces,
+ * low-contrast borders, blue-violet accent, green/amber/red status colors.
+ */
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, "Cascadia Mono",
+    "Liberation Mono", "Courier New", monospace;
+
+  /* Background & surfaces */
+  --color-bg: #0a0e1a;
+  --color-bg-deep: #060a14;
+  --color-surface: #0f1526;
+  --color-surface-raised: #151d33;
+  --color-surface-glass: rgb(15 21 40 / 0.66);
+
+  /* Borders */
+  --color-border: rgb(148 163 197 / 0.12);
+  --color-border-strong: rgb(148 163 197 / 0.24);
+
+  /* Text */
+  --color-fg: #e7ebf7;
+  --color-fg-secondary: #9aa4c0;
+  --color-fg-muted: #667090;
+
+  /* Accent — blue violet */
+  --color-accent: #6d7cff;
+  --color-accent-hover: #8a96ff;
+  --color-accent-soft: rgb(109 124 255 / 0.14);
+
+  /* Status */
+  --color-success: #34d399;
+  --color-success-soft: rgb(52 211 153 / 0.12);
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgb(251 191 36 / 0.12);
+  --color-danger: #f87171;
+  --color-danger-soft: rgb(248 113 113 / 0.12);
+
+  /* Radii */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Breathing status dots (PRD §18.4) */
+  --animate-breathe: breathe 2.6s ease-in-out infinite;
+
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+}
+
+/*
+ * Restrained glassmorphism — ONLY for sidebar, top status bar, dashboard
+ * stat cards and dialogs (PRD §18.3).
+ */
+@utility glass {
+  background-color: var(--color-surface-glass);
+  border: 1px solid var(--color-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/*
+ * Flat solid surface — for tables, forms, logs and dense data areas.
+ */
+@utility card-flat {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    /* Subtle "liquid" ambience — kept very low so data stays readable. */
+    background-image:
+      radial-gradient(1100px 700px at 85% -10%, rgb(109 124 255 / 0.08), transparent 60%),
+      radial-gradient(900px 640px at -15% 110%, rgb(56 189 248 / 0.05), transparent 60%);
+    background-attachment: fixed;
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: rgb(109 124 255 / 0.35);
+  }
+}
+
+/* Scrollbars — thin, low contrast. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 197 / 0.22) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgb(148 163 197 / 0.18);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(148 163 197 / 0.32);
+}
+
+/* Vue <Transition> helpers — subtle 150-200ms motion only (PRD §18.4). */
+.page-enter-active {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.page-leave-active {
+  transition: opacity 120ms ease;
+}
+.page-leave-to {
+  opacity: 0;
+}
+
+.dialog-enter-active,
+.dialog-leave-active {
+  transition: opacity 180ms ease;
+}
+.dialog-enter-from,
+.dialog-leave-to {
+  opacity: 0;
+}
+.dialog-enter-active [role="dialog"],
+.dialog-leave-active [role="dialog"] {
+  transition: transform 180ms ease;
+}
+.dialog-enter-from [role="dialog"],
+.dialog-leave-to [role="dialog"] {
+  transform: translateY(8px) scale(0.98);
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.banner-enter-active,
+.banner-leave-active {
+  transition: opacity 160ms ease;
+}
+.banner-enter-from,
+.banner-leave-to {
+  opacity: 0;
+}
+
+/* Accessibility — globally disable motion when the user asks for it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
