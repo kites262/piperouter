@@ -82,13 +82,17 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="dialog">
       <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" @click="close" />
+        <div
+          class="absolute inset-0 bg-black/55 backdrop-blur-md backdrop-saturate-150"
+          aria-hidden="true"
+          @click="close"
+        />
         <div
           ref="panel"
           role="dialog"
           aria-modal="true"
           tabindex="-1"
-          class="glass relative max-h-[85vh] w-full overflow-y-auto rounded-xl p-5 shadow-2xl shadow-black/40 focus:outline-none"
+          class="glass-panel relative max-h-[85vh] w-full overflow-y-auto p-5 focus:outline-none"
           :class="maxWidth"
         >
           <header v-if="title || description || $slots.header" class="mb-4 flex items-start justify-between gap-4">

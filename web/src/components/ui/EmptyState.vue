@@ -6,7 +6,7 @@ withDefaults(defineProps<{ title: string; description?: string }>(), { descripti
   <div class="card-flat flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
     <div
       v-if="$slots.icon"
-      class="mb-1 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-raised text-fg-muted"
+      class="mb-1 flex h-12 w-12 items-center justify-center rounded-xl border border-accent/20 bg-accent-soft text-accent elevate"
     >
       <slot name="icon" />
     </div>

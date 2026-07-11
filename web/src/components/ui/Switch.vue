@@ -15,7 +15,7 @@ withDefaults(defineProps<{ disabled?: boolean }>(), { disabled: false })
     @click="model = !model"
   >
     <span
-      class="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform duration-150"
+      class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-150 ease-spring"
       :class="model ? 'translate-x-[18px]' : 'translate-x-[3px]'"
     />
   </button>

@@ -17,6 +17,7 @@ import RecentErrorsPanel from '@/components/dashboard/RecentErrorsPanel.vue'
 import RoutesOverviewTable from '@/components/dashboard/RoutesOverviewTable.vue'
 import StatCard from '@/components/dashboard/StatCard.vue'
 import Button from '@/components/ui/Button.vue'
+import Skeleton from '@/components/ui/Skeleton.vue'
 import { usePolling } from '@/composables/usePolling'
 import { useToast } from '@/composables/useToast'
 
@@ -73,7 +74,10 @@ interface StatCardModel {
   sub: string
   tone: 'default' | 'success' | 'warning' | 'danger'
   mono: boolean
-  dot?: 'success' | 'warning' | 'danger' | 'muted'
+  dot?: 'success' | 'warning' | 'danger' | 'accent' | 'muted'
+  /** When set, the tile tweens to this number on change. */
+  animate?: number
+  format?: (n: number) => string
 }
 
 const cards = computed<StatCardModel[]>(() => {
@@ -131,14 +135,20 @@ const cards = computed<StatCardModel[]>(() => {
       key: 'active',
       label: 'Active requests',
       value: formatCount(m.active_requests),
+      animate: m.active_requests,
+      format: (n) => formatCount(Math.round(n)),
       sub: `SSE ${formatCount(m.active_sse)} · WS ${formatCount(m.active_websockets)}`,
       tone: 'default',
       mono: true,
+      // Live accent pulse whenever traffic is in flight.
+      dot: m.active_requests > 0 ? 'accent' : undefined,
     },
     {
       key: 'total',
       label: 'Total requests',
       value: formatCount(total),
+      animate: total,
+      format: (n) => formatCount(Math.round(n)),
       sub: total === 0 ? 'no traffic yet' : `${formatCount(errors)} error${errors === 1 ? '' : 's'}`,
       tone: 'default',
       mono: true,
@@ -196,10 +206,10 @@ const cards = computed<StatCardModel[]>(() => {
     <!-- Initial loading skeleton -->
     <template v-if="initialLoading">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-hidden="true">
-        <div v-for="i in 8" :key="i" class="glass rounded-xl p-4">
-          <div class="h-3 w-20 animate-pulse rounded bg-surface-raised" />
-          <div class="mt-3 h-6 w-24 animate-pulse rounded bg-surface-raised" />
-          <div class="mt-2.5 h-3 w-28 animate-pulse rounded bg-surface-raised" />
+        <div v-for="i in 8" :key="i" class="glass-panel p-4">
+          <Skeleton class="h-3 w-20" />
+          <Skeleton class="mt-3 h-6 w-24" />
+          <Skeleton class="mt-2.5 h-3 w-28" />
         </div>
       </div>
       <div class="grid items-start gap-6 xl:grid-cols-5">
@@ -228,22 +238,26 @@ const cards = computed<StatCardModel[]>(() => {
     <template v-else>
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          v-for="c in cards"
+          v-for="(c, i) in cards"
           :key="c.key"
+          class="animate-fade-up"
+          :style="{ animationDelay: `${i * 45}ms` }"
           :label="c.label"
           :value="c.value"
           :sub="c.sub"
           :tone="c.tone"
           :mono="c.mono"
           :dot="c.dot"
+          :animate="c.animate"
+          :format="c.format"
         />
       </div>
 
       <div class="grid items-start gap-6 xl:grid-cols-5">
-        <div class="xl:col-span-3">
+        <div class="animate-fade-up xl:col-span-3" style="animation-delay: 360ms">
           <RoutesOverviewTable :routes="routeMetrics" :prefixes="prefixes" />
         </div>
-        <div class="xl:col-span-2">
+        <div class="animate-fade-up xl:col-span-2" style="animation-delay: 405ms">
           <RecentErrorsPanel :entries="errorEntries" />
         </div>
       </div>
