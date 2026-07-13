@@ -232,7 +232,7 @@ const adminPosture = computed(() => {
         <div class="flex items-center gap-3">
           <div
             class="flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs shadow-[inset_0_1px_0_rgb(255_255_255_/_0.06)]"
-            style="background: var(--toolbar-bg); backdrop-filter: blur(10px)"
+            style="background: var(--toolbar-bg)"
           >
             <StatusDot :status="chip.tone" />
             <span class="text-fg-secondary">{{ chip.label }}</span>

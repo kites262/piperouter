@@ -18,7 +18,7 @@
   --color-bg-deep: #04070f;
   --color-surface: #0d1324;
   --color-surface-raised: #141c32;
-  --color-surface-glass: rgb(14 20 38 / 0.55);
+  --color-surface-glass: rgb(14 20 38 / 0.72);
 
   /* Borders */
   --color-border: rgb(148 163 197 / 0.13);
@@ -177,10 +177,17 @@
  * Unlayered so [data-theme] overrides always win.
  */
 :root {
-  --glass-blur: 20px;
-  --glass-blur-strong: 28px;
-  --glass-saturate: 1.55;
-  --glass-panel-bg: rgb(14 20 38 / 0.72);
+  /*
+   * Performance budget (paint cost vs look):
+   * - backdrop-filter only on sparse chrome (.glass), never on every card
+   * - ambient mesh is static (animating it re-composites all glass blurs)
+   * - film grain is a cached bitmap, not live SVG feTurbulence
+   */
+  --glass-blur: 12px;
+  --glass-blur-strong: 16px;
+  --glass-saturate: 1.2;
+  /* Opaque enough that content panels need no backdrop-filter. */
+  --glass-panel-bg: rgb(14 20 38 / 0.9);
   --glass-specular: linear-gradient(
     165deg,
     rgb(255 255 255 / 0.14) 0%,
@@ -213,14 +220,14 @@
   --ambient-b: rgb(56 189 248 / 0.1);
   --ambient-c: rgb(167 139 250 / 0.08);
   --skeleton-sheen: rgb(255 255 255 / 0.07);
-  --noise-opacity: 0.035;
+  --noise-opacity: 0.03;
   --spotlight-color: rgb(109 124 255 / 0.12);
   --input-bg: rgb(4 7 15 / 0.55);
-  --toolbar-bg: rgb(14 20 38 / 0.55);
+  --toolbar-bg: rgb(14 20 38 / 0.82);
 }
 
 /*
- * Liquid glass — sidebar, top bar, dialogs, stat cards, elevated shells.
+ * Liquid glass — chrome (sidebar/topbar) may blur; content panels do not.
  * Dense data stays on solid surfaces for legibility.
  */
 @utility glass {
@@ -229,12 +236,13 @@
   background-color: var(--color-surface-glass);
   background-image: var(--glass-specular), var(--glass-sheen);
   border: 1px solid var(--color-border);
+  /* Sparse chrome only — N× backdrop-filter is the main scroll jank source. */
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--ring-highlight-strong);
 }
 
-/* Elevated glass panel — more opaque shell for content groups */
+/* Elevated panel — specular glass look without live backdrop sampling. */
 @utility glass-panel {
   position: relative;
   isolation: isolate;
@@ -242,11 +250,11 @@
   background-image: var(--glass-specular), var(--glass-sheen);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--ring-highlight-strong), var(--shadow-elevate);
-  /* Clip noise/spotlight to rounded corners without trapping nested scroll. */
+  /* Clip spotlight/noise to rounded corners without trapping nested scroll. */
   overflow: clip;
+  /* Isolate layout/paint so hover transforms don't dirty the whole page. */
+  contain: layout style paint;
 }
 
 /* Flat solid surface — tables, forms, logs */
@@ -265,14 +273,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Toolbar strip — glass filter bars without full-panel chrome */
+/* Toolbar strip — frosted look via opacity, no per-toolbar blur. */
 @utility glass-toolbar {
   background-color: var(--toolbar-bg);
   background-image: var(--glass-sheen);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--ring-highlight);
 }
 
@@ -309,11 +315,13 @@
   }
 }
 
-/* Ambient mesh + instrument grid (fixed, behind all UI). */
+/* Ambient mesh + instrument grid (fixed, behind all UI).
+   Static on purpose: continuous transform of this layer re-composites every
+   backdrop-filter on chrome and reads as "mysterious lag" while barely moving. */
 body::before {
   content: "";
   position: fixed;
-  inset: -12%;
+  inset: 0;
   z-index: -2;
   pointer-events: none;
   background-image:
@@ -329,8 +337,6 @@ body::before {
     48px 48px,
     48px 48px;
   background-color: var(--color-bg);
-  animation: ambient-drift 36s var(--ease-in-out-soft) infinite alternate;
-  will-change: transform;
 }
 
 /* Soft vignette so edges stay deep and content area feels lit. */
@@ -345,9 +351,13 @@ body::after {
   opacity: 0.55;
 }
 
-/* Film grain — global, tiny cost, kills plastic flatness. */
+/*
+ * Film grain on chrome only (sidebar / top bar).
+ * Content glass-panels skip noise: each panel × SVG feTurbulence × mix-blend
+ * was a free-looking tax on every frame of scroll/hover.
+ * Bitmap noise (no live filter) + normal alpha keeps the anti-plastic grain.
+ */
 .noise-layer,
-.glass-panel::after,
 .glass::after {
   content: "";
   pointer-events: none;
@@ -355,9 +365,9 @@ body::after {
   inset: 0;
   border-radius: inherit;
   opacity: var(--noise-opacity);
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: 180px 180px;
+  /* 64×64 fractal-ish tiles, no feTurbulence at paint time. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%23fff' fill-opacity='0'/%3E%3Ccircle cx='4' cy='9' r='0.6' fill='%23fff' fill-opacity='0.55'/%3E%3Ccircle cx='18' cy='3' r='0.5' fill='%23fff' fill-opacity='0.4'/%3E%3Ccircle cx='31' cy='14' r='0.55' fill='%23fff' fill-opacity='0.5'/%3E%3Ccircle cx='47' cy='7' r='0.45' fill='%23fff' fill-opacity='0.35'/%3E%3Ccircle cx='58' cy='22' r='0.55' fill='%23fff' fill-opacity='0.45'/%3E%3Ccircle cx='9' cy='28' r='0.5' fill='%23fff' fill-opacity='0.4'/%3E%3Ccircle cx='22' cy='39' r='0.55' fill='%23fff' fill-opacity='0.5'/%3E%3Ccircle cx='37' cy='31' r='0.45' fill='%23fff' fill-opacity='0.35'/%3E%3Ccircle cx='51' cy='42' r='0.55' fill='%23fff' fill-opacity='0.45'/%3E%3Ccircle cx='12' cy='52' r='0.5' fill='%23fff' fill-opacity='0.4'/%3E%3Ccircle cx='28' cy='58' r='0.55' fill='%23fff' fill-opacity='0.5'/%3E%3Ccircle cx='44' cy='49' r='0.45' fill='%23fff' fill-opacity='0.35'/%3E%3Ccircle cx='59' cy='55' r='0.5' fill='%23fff' fill-opacity='0.4'/%3E%3Ccircle cx='3' cy='41' r='0.45' fill='%23fff' fill-opacity='0.35'/%3E%3Ccircle cx='40' cy='20' r='0.5' fill='%23fff' fill-opacity='0.4'/%3E%3C/svg%3E");
+  background-size: 96px 96px;
   z-index: 1;
 }
 
@@ -404,7 +414,7 @@ body::after {
   --color-bg-deep: #e2e7f2;
   --color-surface: #ffffff;
   --color-surface-raised: #f3f5fb;
-  --color-surface-glass: rgb(255 255 255 / 0.68);
+  --color-surface-glass: rgb(255 255 255 / 0.82);
 
   --color-border: rgb(15 23 42 / 0.1);
   --color-border-strong: rgb(15 23 42 / 0.18);
@@ -424,7 +434,7 @@ body::after {
   --color-danger: #dc2626;
   --color-danger-soft: rgb(220 38 38 / 0.1);
 
-  --glass-panel-bg: rgb(255 255 255 / 0.78);
+  --glass-panel-bg: rgb(255 255 255 / 0.92);
   --glass-specular: linear-gradient(
     165deg,
     rgb(255 255 255 / 0.85) 0%,
@@ -450,10 +460,10 @@ body::after {
   --ambient-b: rgb(14 165 233 / 0.1);
   --ambient-c: rgb(167 139 250 / 0.09);
   --skeleton-sheen: rgb(255 255 255 / 0.7);
-  --noise-opacity: 0.025;
+  --noise-opacity: 0.02;
   --spotlight-color: rgb(85 96 230 / 0.1);
   --input-bg: rgb(255 255 255 / 0.75);
-  --toolbar-bg: rgb(255 255 255 / 0.65);
+  --toolbar-bg: rgb(255 255 255 / 0.9);
 }
 
 :root[data-theme="light"] ::selection {
@@ -497,7 +507,7 @@ body::after {
     border-color var(--duration-base) var(--ease-out-soft);
 }
 .card-lift:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   border-color: var(--color-border-strong);
   box-shadow: var(--ring-highlight-strong), var(--shadow-elevate-hover);
 }
@@ -515,12 +525,14 @@ body::after {
   border-radius: inherit;
   z-index: 0;
   background: radial-gradient(
-    420px circle at var(--spot-x) var(--spot-y),
+    320px circle at var(--spot-x) var(--spot-y),
     var(--spotlight-color),
     transparent 55%
   );
   opacity: 0;
   transition: opacity var(--duration-base) ease;
+  /* Keep spotlight repaints local (no size containment — inset:0 needs parent). */
+  contain: paint;
 }
 .glass-spotlight:hover::before {
   opacity: 1;
@@ -552,20 +564,19 @@ body::after {
   animation-delay: 320ms;
 }
 
-/* Logo ambient ring */
+/* Logo ambient ring — soft radial only (no filter:blur + infinite scale pulse). */
 .logo-glow {
   position: relative;
 }
 .logo-glow::after {
   content: "";
   position: absolute;
-  inset: -4px;
+  inset: -10px;
   border-radius: inherit;
-  background: radial-gradient(circle, rgb(109 124 255 / 0.45), transparent 70%);
+  background: radial-gradient(circle, rgb(109 124 255 / 0.4), transparent 68%);
   z-index: -1;
   opacity: 0.55;
-  filter: blur(6px);
-  animation: glow-pulse 3.2s ease-in-out infinite;
+  pointer-events: none;
 }
 
 /* Status health ribbon under topbar content */
@@ -665,15 +676,6 @@ body::after {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-
-  body::before {
-    animation: none !important;
-    transform: none !important;
-  }
-
-  .logo-glow::after {
-    animation: none !important;
   }
 
   .glass-spotlight::before {
