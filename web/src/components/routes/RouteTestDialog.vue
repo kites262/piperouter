@@ -12,10 +12,9 @@ import Select from '@/components/ui/Select.vue'
 import { useToast } from '@/composables/useToast'
 
 /**
- * "Test Route" dialog (PRD §19.4 + §19.7): sends a real request through the
- * route's pipeline via POST /api/v1/diagnostics/route and renders the result
- * stage by stage (Route Resolution → Target URL → Transport Selection →
- * Connection → TLS → HTTP Response → Duration).
+ * "Test Route" dialog: probes this named route end-to-end via
+ * POST /api/v1/diagnostics/route (rewrite → transport → target). For
+ * simulating an inbound path match across the whole table, use Diagnostics.
  */
 const open = defineModel<boolean>('open', { required: true })
 
@@ -200,7 +199,7 @@ function fmtMs(ms: number): string {
   <Dialog
     v-model:open="open"
     title="Test Route"
-    :description="`Send a real request through “${route.name}” and inspect each pipeline stage.`"
+    :description="`Probe “${route.name}” end-to-end (rewrite → transport → target). Path is appended under this route’s prefix.`"
     max-width="max-w-xl"
   >
     <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="run">

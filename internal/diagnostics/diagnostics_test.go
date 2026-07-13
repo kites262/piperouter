@@ -67,6 +67,9 @@ func TestTestRoute_Success(t *testing.T) {
 	if res.Status != http.StatusOK {
 		t.Errorf("Status = %d, want 200", res.Status)
 	}
+	if res.Route != "r1" {
+		t.Errorf("Route = %q, want r1", res.Route)
+	}
 	if want := upstream.URL + "/base/models"; res.TargetURL != want {
 		t.Errorf("TargetURL = %q, want %q", res.TargetURL, want)
 	}
@@ -150,6 +153,86 @@ func TestTestRoute_ResolveFailures(t *testing.T) {
 			}
 			if res.Status != 0 {
 				t.Errorf("Status = %d, want 0", res.Status)
+			}
+			if !strings.Contains(res.Error, tc.errPart) {
+				t.Errorf("Error = %q, want it to contain %q", res.Error, tc.errPart)
+			}
+		})
+	}
+}
+
+func TestTestRequest_MatchAndRewrite(t *testing.T) {
+	var gotPath string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	// Longer prefix wins; strip_prefix true → /api/v1/models → /models on target.
+	trueVal := true
+	snap := buildSnapshot(t, &config.Config{
+		Routes: []config.RouteConfig{
+			{Name: "short", Enabled: &trueVal, Prefix: "/api", Target: upstream.URL + "/short", StripPrefix: &trueVal},
+			{Name: "long", Enabled: &trueVal, Prefix: "/api/v1", Target: upstream.URL + "/v1base", StripPrefix: &trueVal},
+		},
+	})
+
+	res := diagnostics.TestRequest(context.Background(), snap,
+		diagnostics.RequestTest{Path: "/api/v1/models", Method: "GET"})
+	if !res.OK {
+		t.Fatalf("OK = false: stage=%q error=%q", res.ErrorStage, res.Error)
+	}
+	if res.Route != "long" {
+		t.Errorf("Route = %q, want long (longest-prefix match)", res.Route)
+	}
+	if want := upstream.URL + "/v1base/models"; res.TargetURL != want {
+		t.Errorf("TargetURL = %q, want %q", res.TargetURL, want)
+	}
+	if gotPath != "/v1base/models" {
+		t.Errorf("upstream path = %q, want /v1base/models", gotPath)
+	}
+}
+
+func TestTestRequest_NoMatch(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer upstream.Close()
+
+	snap := buildSnapshot(t, &config.Config{
+		Routes: []config.RouteConfig{route("only", "/api", upstream.URL, true)},
+	})
+
+	res := diagnostics.TestRequest(context.Background(), snap,
+		diagnostics.RequestTest{Path: "/other/path"})
+	if res.OK || res.ErrorStage != diagnostics.StageResolve {
+		t.Fatalf("result = %+v, want resolve failure", res)
+	}
+	if !strings.Contains(res.Error, "no route matched") {
+		t.Errorf("Error = %q, want no route matched", res.Error)
+	}
+	if res.Route != "" {
+		t.Errorf("Route = %q, want empty on no match", res.Route)
+	}
+}
+
+func TestTestRequest_ResolveFailures(t *testing.T) {
+	snap := buildSnapshot(t, &config.Config{
+		Routes: []config.RouteConfig{route("r", "/r", "http://127.0.0.1:9", true)},
+	})
+	tests := []struct {
+		name    string
+		req     diagnostics.RequestTest
+		errPart string
+	}{
+		{"relative path", diagnostics.RequestTest{Path: "models"}, "start with"},
+		{"bad escape", diagnostics.RequestTest{Path: "/%zz"}, "percent escape"},
+		{"bad method", diagnostics.RequestTest{Path: "/", Method: "DELETE"}, "unsupported method"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := diagnostics.TestRequest(context.Background(), snap, tc.req)
+			if res.OK || res.ErrorStage != diagnostics.StageResolve {
+				t.Fatalf("result = %+v, want resolve failure", res)
 			}
 			if !strings.Contains(res.Error, tc.errPart) {
 				t.Errorf("Error = %q, want it to contain %q", res.Error, tc.errPart)

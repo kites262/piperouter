@@ -24,11 +24,23 @@ interface Stage {
 
 const FAIL_GROUPS: Record<string, number> = { resolve: -1, connect: 0, tls: 1, response: 2 }
 
+const KIND_LABEL: Record<DiagnosticsRun['kind'], string> = {
+  request: 'Request probe',
+  route: 'Route test',
+  transport: 'Transport test',
+}
+
 const result = computed(() => props.run.result)
 
 const targetUrl = computed(() => {
   if (result.value.target_url !== '') return result.value.target_url
   return props.run.kind === 'transport' ? props.run.input : ''
+})
+
+const matchedRoute = computed(() => {
+  if (result.value.route !== '') return result.value.route
+  if (props.run.kind === 'route') return props.run.subject
+  return ''
 })
 
 const isHttps = computed(() => targetUrl.value.toLowerCase().startsWith('https:'))
@@ -42,22 +54,27 @@ const stages = computed<Stage[]>(() => {
 
   const list: Stage[] = []
 
-  if (props.run.kind === 'route') {
-    const resolveFailed = r.error_stage === 'resolve'
-    list.push({
-      key: 'route',
-      label: 'Route Resolution',
-      state: resolveFailed ? 'fail' : 'ok',
-      value: resolveFailed ? undefined : props.run.subject,
-      note: resolveFailed ? undefined : 'route matched and rewritten through the real pipeline',
-      error: resolveFailed ? r.error : undefined,
-    })
-  } else {
+  if (props.run.kind === 'transport') {
     list.push({
       key: 'route',
       label: 'Route Resolution',
       state: 'skip',
       note: 'not applicable for transport tests',
+    })
+  } else {
+    const resolveFailed = r.error_stage === 'resolve'
+    const name = matchedRoute.value
+    list.push({
+      key: 'route',
+      label: 'Route Resolution',
+      state: resolveFailed ? 'fail' : 'ok',
+      value: resolveFailed ? undefined : name !== '' ? name : undefined,
+      note: resolveFailed
+        ? undefined
+        : props.run.kind === 'request'
+          ? 'longest-prefix match on the inbound path (data plane)'
+          : 'named route resolved and rewritten through the real pipeline',
+      error: resolveFailed ? r.error : undefined,
     })
   }
 
@@ -139,13 +156,17 @@ const lineClasses: Record<StageState, string> = {
   <article class="glass-panel animate-fade-scale p-4">
     <header class="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
       <div class="flex min-w-0 flex-wrap items-center gap-2">
-        <Badge :variant="run.kind === 'route' ? 'accent' : 'default'">
-          {{ run.kind === 'route' ? 'Route test' : 'Transport test' }}
+        <Badge :variant="run.kind === 'request' ? 'accent' : run.kind === 'route' ? 'default' : 'muted'">
+          {{ KIND_LABEL[run.kind] }}
         </Badge>
         <span class="font-mono text-xs text-fg-secondary">{{ run.method }}</span>
         <span class="min-w-0 max-w-full truncate font-mono text-xs text-fg" :title="run.input">
           <template v-if="run.kind === 'route'">{{ run.subject }} · {{ run.input }}</template>
-          <template v-else>{{ run.input }}</template>
+          <template v-else-if="run.kind === 'request'">
+            {{ run.input }}
+            <template v-if="matchedRoute !== ''"> · {{ matchedRoute }}</template>
+          </template>
+          <template v-else>{{ run.subject }} → {{ run.input }}</template>
         </span>
       </div>
       <div class="flex items-center gap-2">

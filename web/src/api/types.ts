@@ -276,6 +276,13 @@ export interface LogsQuery {
 // Diagnostics (internal/diagnostics)
 // ---------------------------------------------------------------------------
 
+/** POST /api/v1/diagnostics/request request body. Method defaults to GET. */
+export interface RequestTestRequest {
+  /** Full inbound path (must start with `/`; empty → `/`). */
+  path?: string
+  method?: string
+}
+
 /** POST /api/v1/diagnostics/route request body. Method defaults to GET. */
 export interface RouteTestRequest {
   route: string
@@ -293,6 +300,8 @@ export interface TransportTestRequest {
 /** diagnostics.Result */
 export interface DiagnosticsResult {
   ok: boolean
+  /** Matched/named route; empty when N/A (transport tests or no match). */
+  route: string
   target_url: string
   transport: string
   status: number

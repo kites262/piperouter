@@ -1,10 +1,16 @@
-// Package diagnostics executes route and transport connectivity tests
-// (PRD §16). A probe runs the real pipeline — rewrite via the route
-// table, dispatch through the transport pool entry's RoundTripper — with
-// a bounded overall timeout, no redirect following, and at most 64 KiB
-// of the response body read and discarded. Bodies and authentication
-// header values are never stored or logged; proxy URLs are redacted
-// from error messages.
+// Package diagnostics executes connectivity probes (PRD §16):
+//
+//   - RequestTest — simulate an inbound data-plane request (path match →
+//     rewrite → transport), the Diagnostics console use case.
+//   - RouteTest   — probe a named route end-to-end (Routes page "Test").
+//   - TransportTest — probe an absolute URL through a named transport
+//     (Transports page "Test").
+//
+// Each probe uses the real pipeline pieces (route table rewrite, transport
+// pool RoundTripper) with a bounded overall timeout, no redirect following,
+// and at most 64 KiB of the response body read and discarded. Bodies and
+// authentication header values are never stored or logged; proxy URLs are
+// redacted from error messages.
 package diagnostics
 
 import (
@@ -40,9 +46,19 @@ const (
 	StageResponse = "response" // connected, but no usable HTTP response arrived
 )
 
-// RouteTest asks for a probe of a configured route. Path is an extra
-// path appended below the route prefix ("" or starting with "/"); the
-// synthetic request path prefix+path then runs through the real rewrite.
+// RequestTest asks for a probe of a full inbound request path, matched
+// against the live route table exactly like the data plane (longest-prefix,
+// path-segment boundary). Path must be empty or start with "/"; empty is
+// treated as "/". Method defaults to GET; only GET, HEAD and POST are
+// allowed. Probes never carry a request body (PRD §16.1).
+type RequestTest struct {
+	Path   string `json:"path"`
+	Method string `json:"method"`
+}
+
+// RouteTest asks for a probe of a configured route by name. Path is an
+// extra path appended below the route prefix ("" or starting with "/");
+// the synthetic request path prefix+path then runs through the real rewrite.
 // Method defaults to GET; only GET, HEAD and POST are allowed. Probes
 // never carry a request body (PRD §16.1).
 type RouteTest struct {
@@ -64,6 +80,7 @@ type TransportTest struct {
 // means the network link works, so OK is true (PRD §16.1).
 type Result struct {
 	OK               bool    `json:"ok"`
+	Route            string  `json:"route"` // matched/named route; empty when N/A
 	TargetURL        string  `json:"target_url"`
 	Transport        string  `json:"transport"`
 	Status           int     `json:"status"`      // 0 if no HTTP response
@@ -93,6 +110,38 @@ func normalizeMethod(m string) (string, bool) {
 	}
 }
 
+// TestRequest probes as if a client hit the data plane: Match on the
+// request path (escaped, segment-boundary longest-prefix), then rewrite
+// and forward through the matched route's transport. A path that matches
+// no enabled route is a resolve-stage failure.
+func TestRequest(ctx context.Context, snap *runtime.Snapshot, t RequestTest) Result {
+	method, ok := normalizeMethod(t.Method)
+	if !ok {
+		return resolveFailure("", "", "", fmt.Sprintf("unsupported method %q (allowed: GET, HEAD, POST)", t.Method))
+	}
+	if snap == nil || snap.Table == nil || snap.Pool == nil {
+		return resolveFailure("", "", "", "no active configuration")
+	}
+
+	path := t.Path
+	if path == "" {
+		path = "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		return resolveFailure("", "", "", `path must start with "/"`)
+	}
+	reqURL, err := requestURL(path)
+	if err != nil {
+		return resolveFailure("", "", "", err.Error())
+	}
+
+	route := snap.Table.Match(reqURL.EscapedPath())
+	if route == nil {
+		return resolveFailure("", "", "", "no route matched")
+	}
+	return probeRoute(ctx, snap, route, method, reqURL)
+}
+
 // TestRoute probes a route end-to-end: it resolves the ENABLED route by
 // name from the snapshot's table (a disabled or unknown route is a
 // resolve-stage failure), builds the synthetic request path
@@ -101,10 +150,10 @@ func normalizeMethod(m string) (string, bool) {
 func TestRoute(ctx context.Context, snap *runtime.Snapshot, t RouteTest) Result {
 	method, ok := normalizeMethod(t.Method)
 	if !ok {
-		return resolveFailure("", "", fmt.Sprintf("unsupported method %q (allowed: GET, HEAD, POST)", t.Method))
+		return resolveFailure("", "", "", fmt.Sprintf("unsupported method %q (allowed: GET, HEAD, POST)", t.Method))
 	}
 	if snap == nil || snap.Table == nil || snap.Pool == nil {
-		return resolveFailure("", "", "no active configuration")
+		return resolveFailure("", "", "", "no active configuration")
 	}
 
 	var route *router.Route
@@ -115,11 +164,11 @@ func TestRoute(ctx context.Context, snap *runtime.Snapshot, t RouteTest) Result 
 		}
 	}
 	if route == nil {
-		return resolveFailure("", "", "route disabled or not found")
+		return resolveFailure("", "", "", "route disabled or not found")
 	}
 
 	if t.Path != "" && !strings.HasPrefix(t.Path, "/") {
-		return resolveFailure("", route.TransportName, `path must be empty or start with "/"`)
+		return resolveFailure(route.Name, "", route.TransportName, `path must be empty or start with "/"`)
 	}
 	// The synthetic request path is prefix+path; the root prefix "/" is
 	// trimmed first so it never produces a spurious "//" head.
@@ -127,24 +176,11 @@ func TestRoute(ctx context.Context, snap *runtime.Snapshot, t RouteTest) Result 
 	if syntheticPath == "" {
 		syntheticPath = "/"
 	}
-	// Build the URL from Path/RawPath directly (never url.Parse, which
-	// would read a leading "//" as an authority).
-	unescaped, err := url.PathUnescape(syntheticPath)
+	reqURL, err := requestURL(syntheticPath)
 	if err != nil {
-		return resolveFailure("", route.TransportName, "path contains an invalid percent escape")
+		return resolveFailure(route.Name, "", route.TransportName, err.Error())
 	}
-	synthetic := &url.URL{Path: unescaped}
-	if unescaped != syntheticPath {
-		synthetic.RawPath = syntheticPath
-	}
-	target := route.Rewrite(synthetic)
-
-	entry, found := snap.Pool.Get(route.TransportName)
-	if !found {
-		return resolveFailure(target.String(), route.TransportName,
-			fmt.Sprintf("transport %q not found", route.TransportName))
-	}
-	return probe(ctx, entry, method, target)
+	return probeRoute(ctx, snap, route, method, reqURL)
 }
 
 // TestTransport probes an absolute http/https URL through the named
@@ -152,27 +188,54 @@ func TestRoute(ctx context.Context, snap *runtime.Snapshot, t RouteTest) Result 
 func TestTransport(ctx context.Context, snap *runtime.Snapshot, t TransportTest) Result {
 	method, ok := normalizeMethod(t.Method)
 	if !ok {
-		return resolveFailure("", t.Transport, fmt.Sprintf("unsupported method %q (allowed: GET, HEAD, POST)", t.Method))
+		return resolveFailure("", "", t.Transport, fmt.Sprintf("unsupported method %q (allowed: GET, HEAD, POST)", t.Method))
 	}
 	if snap == nil || snap.Pool == nil {
-		return resolveFailure("", t.Transport, "no active configuration")
+		return resolveFailure("", "", t.Transport, "no active configuration")
 	}
 	entry, found := snap.Pool.Get(t.Transport)
 	if !found {
-		return resolveFailure("", t.Transport, "transport not found")
+		return resolveFailure("", "", t.Transport, "transport not found")
 	}
 	u, err := url.Parse(t.URL)
 	if err != nil || !u.IsAbs() || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return resolveFailure("", t.Transport, "url must be an absolute http or https URL")
+		return resolveFailure("", "", t.Transport, "url must be an absolute http or https URL")
 	}
 	if u.User != nil {
-		return resolveFailure("", t.Transport, "url must not contain userinfo")
+		return resolveFailure("", "", t.Transport, "url must not contain userinfo")
 	}
 	return probe(ctx, entry, method, u)
 }
 
-func resolveFailure(targetURL, transportName, msg string) Result {
+// requestURL builds a path-only URL from an escaped path string without
+// treating a leading "//" as an authority (never url.Parse on the raw path).
+func requestURL(escapedPath string) (*url.URL, error) {
+	unescaped, err := url.PathUnescape(escapedPath)
+	if err != nil {
+		return nil, errors.New("path contains an invalid percent escape")
+	}
+	u := &url.URL{Path: unescaped}
+	if unescaped != escapedPath {
+		u.RawPath = escapedPath
+	}
+	return u, nil
+}
+
+func probeRoute(ctx context.Context, snap *runtime.Snapshot, route *router.Route, method string, reqURL *url.URL) Result {
+	target := route.Rewrite(reqURL)
+	entry, found := snap.Pool.Get(route.TransportName)
+	if !found {
+		return resolveFailure(route.Name, target.String(), route.TransportName,
+			fmt.Sprintf("transport %q not found", route.TransportName))
+	}
+	res := probe(ctx, entry, method, target)
+	res.Route = route.Name
+	return res
+}
+
+func resolveFailure(routeName, targetURL, transportName, msg string) Result {
 	return Result{
+		Route:      routeName,
 		TargetURL:  targetURL,
 		Transport:  transportName,
 		ErrorStage: StageResolve,
@@ -218,6 +281,7 @@ func (s *traceState) firstByteTime() time.Time {
 
 // probe sends one bodyless request for target through entry, never
 // following redirects, and drains at most maxBodyRead of the response.
+// Callers that know a route name set Result.Route after probe returns.
 func probe(ctx context.Context, entry *transport.Entry, method string, target *url.URL) Result {
 	res := Result{TargetURL: target.String(), Transport: entry.Name}
 

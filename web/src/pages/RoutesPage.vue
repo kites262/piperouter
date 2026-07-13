@@ -1,6 +1,6 @@
 <!-- Routes list (PRD §19.2) — table with live per-route metrics + CRUD. -->
 <script setup lang="ts">
-import { Pencil, Plus, RefreshCw, Route as RouteIcon, Trash2 } from 'lucide-vue-next'
+import { FlaskConical, Pencil, Plus, RefreshCw, Route as RouteIcon, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
@@ -15,6 +15,7 @@ import {
 } from '@/api/client'
 import type { RouteConfig, RouteMetrics, TransportConfig } from '@/api/types'
 import RouteFormDialog from '@/components/routes/RouteFormDialog.vue'
+import RouteTestDialog from '@/components/routes/RouteTestDialog.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -258,6 +259,16 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
+// --- test dialog ------------------------------------------------------------
+
+const testOpen = ref(false)
+const testTarget = ref<RouteConfig | null>(null)
+
+function openTest(route: RouteConfig): void {
+  testTarget.value = route
+  testOpen.value = true
+}
+
 // --- navigation -------------------------------------------------------------
 
 function goDetail(name: string): void {
@@ -327,8 +338,8 @@ function goDetail(name: string): void {
           <col class="w-[7%]" />
           <col class="w-[7%]" />
           <col class="w-[9%]" />
-          <!-- 2× size-sm icon buttons + cell padding — same right inset as Transports. -->
-          <col class="w-[6.5rem]" />
+          <!-- 3× size-sm icon buttons + cell padding — same right inset as Transports. -->
+          <col class="w-[9.5rem]" />
         </colgroup>
         <THead>
           <tr>
@@ -415,6 +426,14 @@ function goDetail(name: string): void {
                 <Button
                   variant="ghost"
                   size="sm"
+                  :aria-label="`Test route ${row.route.name}`"
+                  @click="openTest(row.route)"
+                >
+                  <FlaskConical class="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   :aria-label="`Edit route ${row.route.name}`"
                   @click="openEdit(row.route)"
                 >
@@ -445,6 +464,12 @@ function goDetail(name: string): void {
       :revision="revision"
       @saved="() => void loadAll()"
       @reload="() => void loadAll()"
+    />
+
+    <RouteTestDialog
+      v-if="testTarget !== null"
+      v-model:open="testOpen"
+      :route="testTarget"
     />
 
     <ConfirmDialog

@@ -841,6 +841,7 @@ func TestDiagnosticsEndpoints(t *testing.T) {
 
 	var res struct {
 		OK         bool    `json:"ok"`
+		Route      string  `json:"route"`
 		TargetURL  string  `json:"target_url"`
 		Transport  string  `json:"transport"`
 		Status     int     `json:"status"`
@@ -850,14 +851,44 @@ func TestDiagnosticsEndpoints(t *testing.T) {
 		TotalMs    float64 `json:"total_duration_ms"`
 	}
 
-	// Route probe through the real pipeline.
-	resp, body := env.do(t, "POST", "/api/v1/diagnostics/route",
+	// Request probe: path match like the data plane, then real pipeline.
+	resp, body := env.do(t, "POST", "/api/v1/diagnostics/request",
+		map[string]any{"path": "/up/ping", "method": "GET"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("diag request = %d (%s)", resp.StatusCode, body)
+	}
+	mustJSON(t, body, &res)
+	if !res.OK || res.Status != 200 || res.Route != "up" || res.TargetURL != upstream.URL+"/ping" || res.Transport != "direct" {
+		t.Errorf("diag request result = %+v", res)
+	}
+
+	// No matching route → 200 with resolve failure (not HTTP 404).
+	resp, body = env.do(t, "POST", "/api/v1/diagnostics/request",
+		map[string]any{"path": "/nomatch"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("diag request nomatch = %d (%s)", resp.StatusCode, body)
+	}
+	mustJSON(t, body, &res)
+	if res.OK || res.ErrorStage != "resolve" || !strings.Contains(res.Error, "no route matched") {
+		t.Errorf("diag request nomatch = %+v, want resolve failure", res)
+	}
+
+	// Invalid path/method → 400.
+	resp, body = env.do(t, "POST", "/api/v1/diagnostics/request",
+		map[string]any{"path": "relative", "method": "GET"})
+	assertError(t, resp, body, http.StatusBadRequest, "invalid_request")
+	resp, body = env.do(t, "POST", "/api/v1/diagnostics/request",
+		map[string]any{"path": "/", "method": "TRACE"})
+	assertError(t, resp, body, http.StatusBadRequest, "invalid_request")
+
+	// Route probe through the real pipeline (named route test).
+	resp, body = env.do(t, "POST", "/api/v1/diagnostics/route",
 		map[string]any{"route": "up", "path": "/ping"})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("diag route = %d (%s)", resp.StatusCode, body)
 	}
 	mustJSON(t, body, &res)
-	if !res.OK || res.Status != 200 || res.TargetURL != upstream.URL+"/ping" || res.Transport != "direct" {
+	if !res.OK || res.Status != 200 || res.Route != "up" || res.TargetURL != upstream.URL+"/ping" || res.Transport != "direct" {
 		t.Errorf("diag route result = %+v", res)
 	}
 

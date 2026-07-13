@@ -2,15 +2,23 @@ import { reactive } from 'vue'
 
 import type { DiagnosticsResult } from '@/api/types'
 
-export type DiagnosticsKind = 'route' | 'transport'
+/**
+ * request  — Diagnostics page: inbound path match (data-plane simulation)
+ * route    — Routes page named-route test
+ * transport — Transports page connectivity test
+ */
+export type DiagnosticsKind = 'request' | 'route' | 'transport'
 
 /** One diagnostics execution, kept in the session-local history list. */
 export interface DiagnosticsRun {
   id: number
   kind: DiagnosticsKind
-  /** Route name (route test) or transport name (transport test). */
+  /**
+   * Matched/named route (request/route) or transport name (transport).
+   * For request probes this is filled from the result after matching.
+   */
   subject: string
-  /** Extra path (route test) or full test URL (transport test). */
+  /** Full path (request), extra path (route), or test URL (transport). */
   input: string
   method: string
   /** Completion time, Unix milliseconds — always rendered locally. */

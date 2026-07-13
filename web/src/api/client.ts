@@ -17,6 +17,7 @@ import type {
   MetricsSnapshot,
   RouteConfig,
   RouteMetrics,
+  RequestTestRequest,
   RouteTestRequest,
   RoutesResponse,
   StatusResponse,
@@ -209,10 +210,17 @@ export function getLogs(query: LogsQuery = {}): Promise<LogsResponse> {
 // Diagnostics
 // ---------------------------------------------------------------------------
 
+/** Simulate an inbound data-plane request (path match → rewrite → probe). */
+export function testRequest(req: RequestTestRequest): Promise<DiagnosticsResult> {
+  return request('POST', `${BASE}/diagnostics/request`, req)
+}
+
+/** Probe a named route end-to-end (Routes page Test). */
 export function testRoute(req: RouteTestRequest): Promise<DiagnosticsResult> {
   return request('POST', `${BASE}/diagnostics/route`, req)
 }
 
+/** Probe a URL through a named transport (Transports page Test). */
 export function testTransport(req: TransportTestRequest): Promise<DiagnosticsResult> {
   return request('POST', `${BASE}/diagnostics/transport`, req)
 }

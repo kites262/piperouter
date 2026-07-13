@@ -272,6 +272,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/diagnostics/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Probe an inbound request path
+         * @description Simulates a client request to the data plane: longest-prefix route
+         *     matching on the given path, then rewrite → transport → target, with a
+         *     15-second overall timeout, no redirect following, and at most 64 KiB
+         *     of response body read and discarded. Use this to answer "what would
+         *     happen if a client hit the proxy with this path?" — not as a
+         *     per-route or per-transport health check (those live on the Routes
+         *     and Transports pages). Upstream 401/403/404 still report `ok: true`
+         *     (the link works). Bodies and authentication headers are never stored
+         *     or logged. A path that matches no enabled route returns HTTP 200 with
+         *     `ok: false` and `error_stage: resolve`.
+         */
+        post: operations["testRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diagnostics/route": {
         parameters: {
             query?: never;
@@ -282,12 +311,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Test a route end-to-end
+         * Test a named route end-to-end
          * @description Executes the real pipeline (rewrite → transport → target) for the
          *     named route with a 15-second overall timeout, no redirect following,
-         *     and at most 64 KiB of response body read and discarded. Upstream
-         *     401/403/404 still report `ok: true` (the link works). Bodies and
-         *     authentication headers are never stored or logged.
+         *     and at most 64 KiB of response body read and discarded. Used by the
+         *     Routes page "Test" action. Upstream 401/403/404 still report
+         *     `ok: true` (the link works). Bodies and authentication headers are
+         *     never stored or logged.
          */
         post: operations["testRoute"];
         delete?: never;
@@ -700,7 +730,20 @@ export interface components {
             /** @description Current ring-buffer capacity (0 = disabled). */
             capacity: number;
         };
-        /** @description Route diagnostics request. */
+        /** @description Inbound-request diagnostics: path is matched against the live route table exactly like the data plane. */
+        RequestTestRequest: {
+            /**
+             * @description Full request path as a client would send (must start with `/`; empty is treated as `/`).
+             * @example /openai/models
+             */
+            path?: string;
+            /**
+             * @description HTTP method for the probe.
+             * @default GET
+             */
+            method: string;
+        };
+        /** @description Named-route diagnostics request (Routes page Test). */
         RouteTestRequest: {
             /**
              * @description Name of the route to test.
@@ -739,6 +782,11 @@ export interface components {
         /** @description Outcome of a diagnostics probe. Upstream 401/403/404 responses still report `ok: true` — the network link works. */
         DiagnosticsResult: {
             ok: boolean;
+            /**
+             * @description Matched or named route for the probe; empty when the probe did not resolve a route (transport-only tests, or no match).
+             * @example openai
+             */
+            route: string;
             /**
              * @description Final rewritten target URL that was probed.
              * @example https://api.openai.com/v1/models
@@ -1292,6 +1340,32 @@ export interface operations {
                     "application/json": components["schemas"]["LogsResponse"];
                 };
             };
+        };
+    };
+    testRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Test result (also returned when the probe itself failed; see `ok`). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticsResult"];
+                };
+            };
+            400: components["responses"]["BadRequestInvalid"];
+            403: components["responses"]["OriginNotAllowed"];
         };
     };
     testRoute: {

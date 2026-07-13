@@ -481,6 +481,23 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 // --- diagnostics ----------------------------------------------------------
 
+func (s *server) handleDiagnosticsRequest(w http.ResponseWriter, r *http.Request) {
+	var req diagnostics.RequestTest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Path != "" && !strings.HasPrefix(req.Path, "/") {
+		writeError(w, http.StatusBadRequest, "invalid_request", `path must be empty or start with "/"`)
+		return
+	}
+	if !diagnostics.AllowedMethod(req.Method) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "method must be GET, HEAD or POST")
+		return
+	}
+	snap := s.deps.Manager.Current()
+	writeJSON(w, http.StatusOK, diagnostics.TestRequest(r.Context(), snap, req))
+}
+
 func (s *server) handleDiagnosticsRoute(w http.ResponseWriter, r *http.Request) {
 	var req diagnostics.RouteTest
 	if !decodeJSON(w, r, &req) {
