@@ -55,9 +55,10 @@ transports:                     # outbound proxy links ("direct" is built in)
     type: socks5
     url: socks5://127.0.0.1:1080
 
-routes:                         # prefix → target mappings
+routes:                         # prefix → backend mappings
   - name: openai
     enabled: true
+    type: proxy                 # default; reverse-proxy to target
     prefix: /openai
     target: https://api.openai.com/v1
     strip_prefix: true
@@ -66,6 +67,10 @@ routes:                         # prefix → target mappings
   - name: github
     prefix: /github
     target: https://api.github.com
+  - name: landing
+    type: static                # serve one local file for every matching path
+    prefix: /
+    target: /var/www/index.html # absolute path to a regular file (not a directory)
 ```
 
 ## Field reference
@@ -146,11 +151,47 @@ Values are Go duration strings. Unset or `0s` means the default.
 | --- | --- | --- | --- | --- |
 | `name` | string | yes | — | unique; must match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` |
 | `enabled` | bool | no | `true` | disabled routes are kept in the file but never match |
+| `type` | string | no | `"proxy"` | `proxy` (reverse-proxy to an HTTP target) or `static` (serve one local file) |
 | `prefix` | string | yes | — | path prefix to match; unique across routes (see rules below) |
-| `target` | string | yes | — | absolute `http`/`https` URL; no query, fragment or userinfo |
-| `strip_prefix` | bool | no | `true` | remove the matched prefix before joining with the target path |
-| `strip_forward_headers` | bool | no | `true` | remove `Forwarded`, `Via` and `X-Forwarded-For/-Host/-Proto` before forwarding; `false` passes inbound values through unchanged |
-| `transport` | string | no | `"direct"` | name of a declared transport, or `direct` |
+| `target` | string | yes | — | for `proxy`: absolute `http`/`https` URL (no query, fragment or userinfo). for `static`: filesystem path to a **regular file** — absolute, or relative to the **configuration file's directory** (`..` allowed and may leave that directory; directories and `file://` URLs are not supported) |
+| `strip_prefix` | bool | no | `true` | `proxy` only: remove the matched prefix before joining with the target path. ignored for `static` |
+| `strip_forward_headers` | bool | no | `true` | `proxy` only: remove `Forwarded`, `Via` and `X-Forwarded-For/-Host/-Proto` before forwarding; `false` passes inbound values through unchanged. ignored for `static` |
+| `transport` | string | no | `"direct"` | `proxy` only: name of a declared transport, or `direct`. ignored for `static` |
+
+#### Route type `proxy` (default)
+
+Matches a path prefix, rewrites onto `target`, and reverse-proxies over `transport`. This is the original PipeRouter behaviour; omitting `type` is equivalent to `type: proxy`.
+
+#### Route type `static`
+
+Every request that matches `prefix` is answered with the **same single file** at `target`. There is no directory listing, no request-path joining onto the file, and no `file://` URL form.
+
+**Path resolution (config load / hot-reload only, not per request):**
+
+- Absolute path: used as-is after cleaning — `/var/www/index.html`
+- Relative path: resolved against the **directory containing the config file** — with `piperouter.yaml` at `/etc/piperouter/piperouter.yaml`, `target: www/index.html` → `/etc/piperouter/www/index.html`
+- `..` is allowed and may resolve **outside** the config directory (`../files/index.html` is fine). This matches absolute paths, which can already point anywhere the process can read. Whoever edits the config is already trusted.
+- The YAML is **never rewritten** to an absolute path (so the file stays portable). Only the in-memory route table stores the absolute path for serving.
+- Trailing separators and URL schemes are rejected.
+
+Only `GET` and `HEAD` are allowed (`405` otherwise). A missing file yields `404` at request time; if the path exists at validation time it must be a regular file (not a directory).
+
+Typical landing page + API split (longest prefix wins, so `/v1` beats `/`):
+
+```yaml
+routes:
+  - name: api
+    type: proxy
+    prefix: /v1
+    target: https://api.example.com/v1
+    strip_prefix: true
+
+  - name: landing
+    type: static
+    prefix: /
+    target: www/index.html    # relative to the config file's directory
+    # target: /var/www/index.html  # or absolute
+```
 
 ## Validation rules
 
@@ -161,9 +202,11 @@ The loader rejects a configuration (listing **all** problems at once) when any o
 - a transport is named `direct` (reserved);
 - a transport `type` is not `http` or `socks5`;
 - a proxy `url` is missing, unparsable, has the wrong scheme for its type, has no host, or contains userinfo;
-- a route references a transport that doesn't exist (`direct` is always known);
+- a route `type` is not `proxy` or `static` (empty is normalized to `proxy`);
+- a `proxy` route references a transport that doesn't exist (`direct` is always known);
 - a route `prefix` is duplicated or violates the prefix rules below;
-- a route `target` is missing, not an absolute URL, not `http`/`https`, has no host, or contains userinfo, a query, or a fragment;
+- a `proxy` route `target` is missing, not an absolute URL, not `http`/`https`, has no host, or contains userinfo, a query, or a fragment;
+- a `static` route `target` is missing, looks like a URL, has a trailing separator, is relative without a config-file base directory, fails to resolve to an absolute path, or (when the resolved path already exists) is not a regular file;
 - `tls.enabled: true` but `cert_file` or `key_file` is empty;
 - `runtime.log_level` is not one of `debug`, `info`, `warn`, `error`;
 - `runtime.recent_logs` is negative.
@@ -263,11 +306,14 @@ Upstream HTTP responses — including `401`, `404`, `429`, `500` — are relayed
 | Condition | Status | Body |
 | --- | --- | --- |
 | No route matched the request path | `404` | `{"error":"route_not_found"}` |
+| Static route received a method other than GET/HEAD | `405` | `{"error":"method_not_allowed"}` (also sets `Allow: GET, HEAD`) |
 | DNS failure, connection refused/failed, dial timeout, HTTP-proxy CONNECT failure, SOCKS5 negotiation failure, TLS handshake failure, upstream closed the connection before responding | `502` | `{"error":"upstream_connection_failed"}` |
 | Upstream connected but response headers didn't arrive within `network.response_header_timeout` | `504` | `{"error":"upstream_timeout"}` |
 | WebSocket upgrade toward the upstream failed | `502` | `{"error":"websocket_upgrade_failed"}` |
 | Unexpected internal error (recovered panic) | `500` | `{"error":"internal_error"}` |
 | Client canceled the request | — | no response is written (logged as `client_canceled`) |
+
+Static file responses (including a missing file → `404` from the file server) are ordinary HTTP responses, not the JSON error envelope above.
 
 Error bodies are fixed JSON codes; they never leak upstream details, proxy URLs, credentials or file paths (those go to the application log only). There are **no automatic retries** — requests may have side effects, so every failure is reported to the caller immediately.
 

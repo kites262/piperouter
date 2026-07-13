@@ -662,7 +662,7 @@ func TestConcurrentApplyReloadCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("final file load: %v", err)
 	}
-	if err := config.Validate(loaded); err != nil {
+	if err := config.Validate(loaded, ""); err != nil {
 		t.Errorf("final file invalid: %v", err)
 	}
 	if st := m.Status(); !st.Valid || st.Revision != final.Revision {

@@ -22,10 +22,10 @@ func buildSnapshot(t *testing.T, cfg *config.Config) *runtime.Snapshot {
 	t.Helper()
 	cfg.Version = config.SupportedVersion
 	cfg.Normalize()
-	if err := config.Validate(cfg); err != nil {
+	if err := config.Validate(cfg, ""); err != nil {
 		t.Fatalf("test config invalid: %v", err)
 	}
-	table, err := router.BuildTable(cfg.Routes)
+	table, err := router.BuildTable(cfg.Routes, "")
 	if err != nil {
 		t.Fatalf("BuildTable: %v", err)
 	}

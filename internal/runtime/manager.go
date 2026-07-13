@@ -62,10 +62,11 @@ func NewManager(configPath string, logger *slog.Logger, reg *metrics.Registry) (
 	// Parse already normalized; Normalize is idempotent and guards against
 	// future callers handing in a non-normalized config.
 	cfg.Normalize()
-	if err := config.Validate(cfg); err != nil {
+	baseDir := config.ConfigBaseDir(configPath)
+	if err := config.Validate(cfg, baseDir); err != nil {
 		return nil, err
 	}
-	snap, err := buildSnapshot(cfg)
+	snap, err := buildSnapshot(cfg, baseDir)
 	if err != nil {
 		return nil, err
 	}
@@ -137,10 +138,11 @@ func (m *Manager) Apply(newCfg *config.Config, expectedRevision string) (*Snapsh
 
 	clone := newCfg.Clone()
 	clone.Normalize()
-	if err := config.Validate(clone); err != nil {
+	baseDir := m.configBaseDir()
+	if err := config.Validate(clone, baseDir); err != nil {
 		return nil, err
 	}
-	next, err := buildSnapshot(clone)
+	next, err := buildSnapshot(clone, baseDir)
 	if err != nil {
 		return nil, err
 	}
@@ -183,10 +185,11 @@ func (m *Manager) Update(expectedRevision string, mutate func(*config.Config) er
 		return nil, err
 	}
 	clone.Normalize()
-	if err := config.Validate(clone); err != nil {
+	baseDir := m.configBaseDir()
+	if err := config.Validate(clone, baseDir); err != nil {
 		return nil, err
 	}
-	next, err := buildSnapshot(clone)
+	next, err := buildSnapshot(clone, baseDir)
 	if err != nil {
 		return nil, err
 	}
@@ -242,10 +245,11 @@ func (m *Manager) ReloadFromFile() error {
 		m.setStatus(true, "")
 		return nil
 	}
-	if err := config.Validate(cfg); err != nil {
+	baseDir := m.configBaseDir()
+	if err := config.Validate(cfg, baseDir); err != nil {
 		return fail(err)
 	}
-	next, err := buildSnapshot(cfg)
+	next, err := buildSnapshot(cfg, baseDir)
 	if err != nil {
 		return fail(err)
 	}
@@ -272,10 +276,17 @@ func (m *Manager) swap(old, next *Snapshot) {
 	m.setStatus(true, "")
 }
 
+// configBaseDir returns the absolute directory of the manager's config file.
+// Relative static targets are resolved against it only at validate/build time.
+func (m *Manager) configBaseDir() string {
+	return config.ConfigBaseDir(m.configPath)
+}
+
 // buildSnapshot compiles a normalized, validated config into an immutable
 // snapshot: route table, transport pool and content revision (PRD §12.1).
-func buildSnapshot(cfg *config.Config) (*Snapshot, error) {
-	table, err := router.BuildTable(cfg.Routes)
+// baseDir resolves relative static targets once into Route.File (not per request).
+func buildSnapshot(cfg *config.Config, baseDir string) (*Snapshot, error) {
+	table, err := router.BuildTable(cfg.Routes, baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("build route table: %w", err)
 	}

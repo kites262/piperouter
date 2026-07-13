@@ -38,11 +38,12 @@ const emit = defineEmits<{ saved: []; reload: [] }>()
 
 const toast = useToast()
 
-type FieldName = 'name' | 'prefix' | 'target' | 'transport'
+type FieldName = 'name' | 'prefix' | 'target' | 'transport' | 'type'
 
 const form = reactive({
   name: '',
   enabled: true,
+  type: 'proxy' as 'proxy' | 'static',
   prefix: '',
   target: '',
   stripPrefix: true,
@@ -55,6 +56,7 @@ const touched = reactive<Record<FieldName, boolean>>({
   prefix: false,
   target: false,
   transport: false,
+  type: false,
 })
 
 const submitted = ref(false)
@@ -71,6 +73,7 @@ watch(open, (isOpen) => {
   const source = isEdit.value ? (props.route ?? null) : null
   form.name = source?.name ?? ''
   form.enabled = source?.enabled ?? true
+  form.type = source?.type === 'static' ? 'static' : 'proxy'
   form.prefix = source?.prefix ?? ''
   form.target = source?.target ?? ''
   form.stripPrefix = source?.strip_prefix ?? true
@@ -80,12 +83,15 @@ watch(open, (isOpen) => {
   touched.prefix = false
   touched.target = false
   touched.transport = false
+  touched.type = false
   submitted.value = false
   saving.value = false
   serverIssues.value = []
   serverError.value = ''
   conflict.value = false
 })
+
+const isStatic = computed(() => form.type === 'static')
 
 /** Always offer the built-in direct transport, even if the list failed to load. */
 const transportOptions = computed<TransportConfig[]>(() => {
@@ -95,11 +101,12 @@ const transportOptions = computed<TransportConfig[]>(() => {
 
 const fieldErrors = computed<Record<FieldName, string | null>>(() => ({
   name: validateName(form.name.trim(), props.routes, originalName.value),
+  type: form.type === 'proxy' || form.type === 'static' ? null : 'Type must be proxy or static.',
   // Validate the raw value so a trailing "/" is flagged live; blur and
   // submit both auto-trim it (§6.4), so it never blocks saving.
   prefix: validatePrefix(form.prefix.trim(), props.routes, originalName.value),
-  target: validateTarget(form.target.trim()),
-  transport: validateTransport(form.transport, transportOptions.value),
+  target: validateTarget(form.target.trim(), form.type),
+  transport: isStatic.value ? null : validateTransport(form.transport, transportOptions.value),
 }))
 
 const hasErrors = computed(() => Object.values(fieldErrors.value).some((e) => e !== null))
@@ -111,12 +118,13 @@ const hasErrors = computed(() => Object.values(fieldErrors.value).some((e) => e 
 const visibleErrors = computed<Record<FieldName, string | null>>(() => {
   const values: Record<FieldName, string> = {
     name: form.name,
+    type: form.type,
     prefix: form.prefix,
     target: form.target,
     transport: form.transport,
   }
   const out = {} as Record<FieldName, string | null>
-  for (const field of ['name', 'prefix', 'target', 'transport'] as const) {
+  for (const field of ['name', 'type', 'prefix', 'target', 'transport'] as const) {
     out[field] =
       touched[field] || submitted.value || values[field] !== '' ? fieldErrors.value[field] : null
   }
@@ -130,7 +138,7 @@ function onPrefixBlur(): void {
   if (trimmed !== form.prefix) form.prefix = trimmed
 }
 
-const preview = computed(() => previewMapping(form.prefix, form.target, form.stripPrefix))
+const preview = computed(() => previewMapping(form.prefix, form.target, form.stripPrefix, form.type))
 
 function onReloadClick(): void {
   conflict.value = false
@@ -152,11 +160,12 @@ async function submit(): Promise<void> {
   const payload: RouteConfig = {
     name: form.name.trim(),
     enabled: form.enabled,
+    type: form.type,
     prefix: normalizePrefix(form.prefix),
     target: form.target.trim(),
     strip_forward_headers: form.stripForwardHeaders,
     strip_prefix: form.stripPrefix,
-    transport: form.transport,
+    transport: form.type === 'static' ? 'direct' : form.transport,
   }
 
   saving.value = true
@@ -197,12 +206,12 @@ async function submit(): Promise<void> {
     :description="
       isEdit
         ? `Changes to “${route?.name ?? ''}” apply immediately on save.`
-        : 'Map a path prefix to an upstream target.'
+        : 'Map a path prefix to an upstream or a local file.'
     "
     max-width="max-w-xl"
   >
     <form class="space-y-4" novalidate @submit.prevent="submit">
-      <!-- Name + Transport -->
+      <!-- Name + Type -->
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="block space-y-1.5" @focusout="touched.name = true">
           <span class="text-xs font-medium text-fg-secondary">Name</span>
@@ -221,15 +230,14 @@ async function submit(): Promise<void> {
           </span>
         </label>
 
-        <label class="block space-y-1.5" @focusout="touched.transport = true">
-          <span class="text-xs font-medium text-fg-secondary">Transport</span>
-          <Select v-model="form.transport" :invalid="visibleErrors.transport !== null">
-            <option v-for="t in transportOptions" :key="t.name" :value="t.name">
-              {{ t.name }} ({{ t.type === 'direct' ? 'built-in' : t.type }})
-            </option>
+        <label class="block space-y-1.5" @focusout="touched.type = true">
+          <span class="text-xs font-medium text-fg-secondary">Type</span>
+          <Select v-model="form.type" :invalid="visibleErrors.type !== null">
+            <option value="proxy">proxy — reverse proxy</option>
+            <option value="static">static — single local file</option>
           </Select>
-          <span v-if="visibleErrors.transport" class="block text-xs text-danger">
-            {{ visibleErrors.transport }}
+          <span v-if="visibleErrors.type" class="block text-xs text-danger">
+            {{ visibleErrors.type }}
           </span>
         </label>
       </div>
@@ -247,16 +255,18 @@ async function submit(): Promise<void> {
           {{ visibleErrors.prefix }}
         </span>
         <span v-else class="block text-xs text-fg-muted">
-          Incoming paths matching this prefix are forwarded. Longest prefix wins.
+          Incoming paths matching this prefix are handled. Longest prefix wins.
         </span>
       </label>
 
-      <!-- Target -->
+      <!-- Target / file -->
       <label class="block space-y-1.5" @focusout="touched.target = true">
-        <span class="text-xs font-medium text-fg-secondary">Target</span>
+        <span class="text-xs font-medium text-fg-secondary">
+          {{ isStatic ? 'File' : 'Target' }}
+        </span>
         <Input
           v-model="form.target"
-          placeholder="https://api.openai.com/v1"
+          :placeholder="isStatic ? '/var/www/index.html' : 'https://api.openai.com/v1'"
           mono
           :invalid="visibleErrors.target !== null"
         />
@@ -264,7 +274,24 @@ async function submit(): Promise<void> {
           {{ visibleErrors.target }}
         </span>
         <span v-else class="block text-xs text-fg-muted">
-          Absolute http(s) URL — no query, fragment or credentials.
+          <template v-if="isStatic">
+            Path to a single file — absolute, or relative to the config file's directory (../
+            allowed; no file://; not a directory).
+          </template>
+          <template v-else> Absolute http(s) URL — no query, fragment or credentials. </template>
+        </span>
+      </label>
+
+      <!-- Transport (proxy only) -->
+      <label v-if="!isStatic" class="block space-y-1.5" @focusout="touched.transport = true">
+        <span class="text-xs font-medium text-fg-secondary">Transport</span>
+        <Select v-model="form.transport" :invalid="visibleErrors.transport !== null">
+          <option v-for="t in transportOptions" :key="t.name" :value="t.name">
+            {{ t.name }} ({{ t.type === 'direct' ? 'built-in' : t.type }})
+          </option>
+        </Select>
+        <span v-if="visibleErrors.transport" class="block text-xs text-danger">
+          {{ visibleErrors.transport }}
         </span>
       </label>
 
@@ -277,24 +304,26 @@ async function submit(): Promise<void> {
           </div>
           <Switch v-model="form.enabled" />
         </div>
-        <div class="flex items-center justify-between gap-3 rounded-md border border-border bg-bg-deep/40 px-3 py-2.5">
-          <div class="min-w-0">
-            <p class="text-sm text-fg">Strip Prefix</p>
-            <p class="text-xs text-fg-muted">Remove the prefix before forwarding.</p>
+        <template v-if="!isStatic">
+          <div class="flex items-center justify-between gap-3 rounded-md border border-border bg-bg-deep/40 px-3 py-2.5">
+            <div class="min-w-0">
+              <p class="text-sm text-fg">Strip Prefix</p>
+              <p class="text-xs text-fg-muted">Remove the prefix before forwarding.</p>
+            </div>
+            <Switch v-model="form.stripPrefix" />
           </div>
-          <Switch v-model="form.stripPrefix" />
-        </div>
-        <div
-          class="flex items-center justify-between gap-3 rounded-md border border-border bg-bg-deep/40 px-3 py-2.5 sm:col-span-2"
-        >
-          <div class="min-w-0">
-            <p class="text-sm text-fg">Strip Forward Headers</p>
-            <p class="text-xs text-fg-muted">
-              Hide client and proxy metadata (Forwarded, Via, X-Forwarded-*) from the target.
-            </p>
+          <div
+            class="flex items-center justify-between gap-3 rounded-md border border-border bg-bg-deep/40 px-3 py-2.5 sm:col-span-2"
+          >
+            <div class="min-w-0">
+              <p class="text-sm text-fg">Strip Forward Headers</p>
+              <p class="text-xs text-fg-muted">
+                Hide client and proxy metadata (Forwarded, Via, X-Forwarded-*) from the target.
+              </p>
+            </div>
+            <Switch v-model="form.stripForwardHeaders" />
           </div>
-          <Switch v-model="form.stripForwardHeaders" />
-        </div>
+        </template>
       </div>
 
       <!-- Mapping preview (PRD §19.3) -->

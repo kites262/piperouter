@@ -145,6 +145,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	st.routeName = route.Name
 	st.transportName = route.TransportName
 
+	// Static routes serve one local file — no transport, no WebSocket, no rewrite.
+	if route.IsStatic() {
+		st.handle = h.reg.IncActive(route.Name, metrics.StreamNone)
+		h.serveStatic(rw, r, route, st)
+		return
+	}
+
 	entry, ok := snap.Pool.Get(route.TransportName)
 	if !ok {
 		// config.Validate + runtime.Manager guarantee this cannot happen;

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -20,7 +21,13 @@ var nameRE = regexp.MustCompile(NamePattern)
 // Validate checks c against the PRD §6.3/§6.4 rules and returns a
 // *ValidationError listing ALL problems found, or nil when the configuration
 // is valid. It assumes Normalize has already been called on c.
-func Validate(c *Config) error {
+//
+// baseDir is the absolute directory of the configuration file (see
+// ConfigBaseDir). It is used only to resolve relative static-route targets
+// at validate time; the YAML is never rewritten. Pass "" when no config
+// path is available — absolute static targets still work, relative ones
+// are rejected. This path is never consulted on the request hot path.
+func Validate(c *Config, baseDir string) error {
 	var issues []string
 	add := func(format string, args ...any) {
 		issues = append(issues, fmt.Sprintf(format, args...))
@@ -135,12 +142,21 @@ func Validate(c *Config) error {
 		}
 		seenPrefixes[r.Prefix] = true
 
-		for _, msg := range targetIssues(r.Target) {
-			add("%s: %s", ref, msg)
-		}
-
-		if r.Transport != "" && !knownTransports[r.Transport] {
-			add("%s: references unknown transport %q", ref, r.Transport)
+		switch r.EffectiveType() {
+		case RouteTypeProxy:
+			for _, msg := range targetIssues(r.Target) {
+				add("%s: %s", ref, msg)
+			}
+			if r.Transport != "" && !knownTransports[r.Transport] {
+				add("%s: references unknown transport %q", ref, r.Transport)
+			}
+		case RouteTypeStatic:
+			for _, msg := range staticTargetIssues(r.Target, baseDir) {
+				add("%s: %s", ref, msg)
+			}
+			// transport / strip_* are ignored for static; no extra checks.
+		default:
+			add("%s: type %q is not supported (must be %q or %q)", ref, r.Type, RouteTypeProxy, RouteTypeStatic)
 		}
 	}
 
@@ -176,8 +192,8 @@ func prefixIssues(prefix string) []string {
 	return issues
 }
 
-// targetIssues checks a route target against PRD §6.3: absolute URL,
-// scheme http/https, no userinfo, no query, no fragment, non-empty host.
+// targetIssues checks a proxy-route target: absolute URL, scheme http/https,
+// no userinfo, no query, no fragment, non-empty host.
 func targetIssues(target string) []string {
 	if target == "" {
 		return []string{"target is required"}
@@ -204,6 +220,36 @@ func targetIssues(target string) []string {
 	}
 	if u.Host == "" {
 		issues = append(issues, "target host must not be empty")
+	}
+	return issues
+}
+
+// staticTargetIssues checks a static-route target: filesystem path to a
+// single regular file (directories are not supported). Relative paths are
+// resolved against baseDir (config file directory) via ResolveStaticFilePath.
+// When the resolved path already exists it must be a regular file; a missing
+// path is allowed so deploys can place the file after configuration.
+//
+// The resolved absolute path is NOT written back into the config — only
+// checked here and re-resolved once in router.BuildTable into Route.File.
+func staticTargetIssues(target, baseDir string) []string {
+	abs, err := ResolveStaticFilePath(target, baseDir)
+	if err != nil {
+		return []string{err.Error()}
+	}
+	var issues []string
+	fi, err := os.Stat(abs)
+	if err != nil {
+		// Missing file is OK at validate time; ServeFile will 404 at runtime.
+		if !os.IsNotExist(err) {
+			issues = append(issues, fmt.Sprintf("static target is not accessible: %v", err))
+		}
+		return issues
+	}
+	if fi.IsDir() {
+		issues = append(issues, "static target must be a file, not a directory")
+	} else if !fi.Mode().IsRegular() {
+		issues = append(issues, "static target must be a regular file")
 	}
 	return issues
 }

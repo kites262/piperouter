@@ -6,6 +6,8 @@ import (
 )
 
 // Rewrite maps an incoming request URL onto the route's target (PRD §8).
+// Only proxy routes support rewrite; static routes panic if Rewrite is
+// called (callers must branch on IsStatic first).
 //
 // It operates exclusively on escaped path strings: it never calls
 // path.Clean and never re-encodes, so percent escapes (%2F, %20, ...) and
@@ -22,6 +24,9 @@ import (
 // URL is new and carries no userinfo or fragment; neither reqURL nor the
 // route is mutated.
 func (r *Route) Rewrite(reqURL *url.URL) *url.URL {
+	if r.IsStatic() || r.Target == nil {
+		panic("router: Rewrite called on static route " + r.Name)
+	}
 	base := strings.TrimSuffix(r.Target.EscapedPath(), "/")
 
 	escapedPath := reqURL.EscapedPath()

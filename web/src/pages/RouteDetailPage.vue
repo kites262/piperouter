@@ -132,8 +132,19 @@ watch(
 const configFields = computed(() => {
   const r = routeCfg.value
   if (r === null) return []
+  const type = r.type === 'static' ? 'static' : 'proxy'
+  if (type === 'static') {
+    return [
+      { label: 'Name', value: r.name },
+      { label: 'Type', value: 'static' },
+      { label: 'Prefix', value: r.prefix },
+      { label: 'File', value: r.target },
+      { label: 'Enabled', value: r.enabled ? 'true' : 'false' },
+    ]
+  }
   return [
     { label: 'Name', value: r.name },
+    { label: 'Type', value: 'proxy' },
     { label: 'Prefix', value: r.prefix },
     { label: 'Target', value: r.target },
     {

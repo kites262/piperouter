@@ -18,7 +18,8 @@ const (
 	errUpstreamTimeout   = "upstream_timeout"
 	errInternal          = "internal_error"
 	errWebSocketUpgrade  = "websocket_upgrade_failed"
-	errClientCanceled    = "client_canceled" // log-only, never written to a client
+	errMethodNotAllowed  = "method_not_allowed" // static routes: only GET/HEAD
+	errClientCanceled    = "client_canceled"    // log-only, never written to a client
 	jsonContentType      = "application/json"
 	xContentTypeOptions  = "X-Content-Type-Options"
 	xContentTypeNosniff  = "nosniff"

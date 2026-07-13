@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -25,8 +27,45 @@ func baseConfig() *Config {
 }
 
 func TestValidateAcceptsBaseConfig(t *testing.T) {
-	if err := Validate(baseConfig()); err != nil {
+	if err := Validate(baseConfig(), ""); err != nil {
 		t.Fatalf("Validate(base) = %v, want nil", err)
+	}
+}
+
+func TestValidateAcceptsStaticFileRoute(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "index.html")
+	if err := os.WriteFile(path, []byte("<html>ok</html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := baseConfig()
+	c.Routes = append(c.Routes, RouteConfig{
+		Name:   "landing",
+		Type:   RouteTypeStatic,
+		Prefix: "/",
+		Target: path,
+	})
+	// Two routes cannot share prefix — base already has /openai and /github.
+	// Use a free prefix instead of "/".
+	c.Routes[len(c.Routes)-1].Prefix = "/home"
+	c.Normalize()
+	if err := Validate(c, ""); err != nil {
+		t.Fatalf("Validate(static) = %v, want nil", err)
+	}
+}
+
+func TestValidateRejectsStaticDirectory(t *testing.T) {
+	dir := t.TempDir()
+	c := baseConfig()
+	c.Routes[0].Type = RouteTypeStatic
+	c.Routes[0].Target = dir
+	c.Normalize()
+	err := Validate(c, "")
+	if err == nil {
+		t.Fatal("Validate accepted directory as static target")
+	}
+	if !strings.Contains(err.Error(), "not a directory") && !strings.Contains(err.Error(), "must be a file") {
+		t.Fatalf("error = %q, want directory rejection", err)
 	}
 }
 
@@ -146,6 +185,35 @@ func TestValidateRejectionMatrix(t *testing.T) {
 			want:   []string{"not a valid URL"},
 		},
 		{
+			name:   "route type unsupported",
+			mutate: func(c *Config) { c.Routes[0].Type = "redirect" },
+			want:   []string{"type", "not supported"},
+		},
+		{
+			name: "static target relative without baseDir",
+			mutate: func(c *Config) {
+				c.Routes[0].Type = RouteTypeStatic
+				c.Routes[0].Target = "www/index.html"
+			},
+			want: []string{"relative"},
+		},
+		{
+			name: "static target is URL",
+			mutate: func(c *Config) {
+				c.Routes[0].Type = RouteTypeStatic
+				c.Routes[0].Target = "file:///var/www/index.html"
+			},
+			want: []string{"filesystem path", "not a URL"},
+		},
+		{
+			name: "static target directory trailing slash",
+			mutate: func(c *Config) {
+				c.Routes[0].Type = RouteTypeStatic
+				c.Routes[0].Target = "/var/www/"
+			},
+			want: []string{"not a directory"},
+		},
+		{
 			name:   "proxy url userinfo",
 			mutate: func(c *Config) { c.Transports[0].URL = "http://user:pw@127.0.0.1:7890" },
 			want:   []string{"userinfo"},
@@ -247,7 +315,7 @@ func TestValidateRejectionMatrix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := baseConfig()
 			tt.mutate(c)
-			err := Validate(c)
+			err := Validate(c, "")
 			if err == nil {
 				t.Fatal("Validate accepted invalid configuration")
 			}
@@ -301,7 +369,7 @@ func TestValidatePrefixForms(t *testing.T) {
 				},
 			}
 			c.Normalize()
-			err := Validate(c)
+			err := Validate(c, "")
 			if tt.ok && err != nil {
 				t.Errorf("Validate rejected valid prefix %q: %v", tt.prefix, err)
 			}
@@ -320,7 +388,7 @@ func TestValidateCollectsAllIssues(t *testing.T) {
 	c.Runtime.LogLevel = "loud"
 	c.Runtime.RecentLogs = intPtr(-5)
 
-	err := Validate(c)
+	err := Validate(c, "")
 	if err == nil {
 		t.Fatal("Validate accepted invalid configuration")
 	}
@@ -339,7 +407,7 @@ func TestValidateCollectsAllIssues(t *testing.T) {
 func TestValidateEmptyNormalizedConfig(t *testing.T) {
 	c := &Config{Version: SupportedVersion}
 	c.Normalize()
-	if err := Validate(c); err != nil {
+	if err := Validate(c, ""); err != nil {
 		t.Fatalf("Validate(empty normalized) = %v, want nil", err)
 	}
 }
@@ -352,7 +420,7 @@ func TestValidateExplicitDirectRoute(t *testing.T) {
 		},
 	}
 	c.Normalize()
-	if err := Validate(c); err != nil {
+	if err := Validate(c, ""); err != nil {
 		t.Fatalf("Validate = %v, want nil (direct is always known)", err)
 	}
 }

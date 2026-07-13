@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -222,6 +223,9 @@ func requestURL(escapedPath string) (*url.URL, error) {
 }
 
 func probeRoute(ctx context.Context, snap *runtime.Snapshot, route *router.Route, method string, reqURL *url.URL) Result {
+	if route.IsStatic() {
+		return probeStatic(route)
+	}
 	target := route.Rewrite(reqURL)
 	entry, found := snap.Pool.Get(route.TransportName)
 	if !found {
@@ -230,6 +234,30 @@ func probeRoute(ctx context.Context, snap *runtime.Snapshot, route *router.Route
 	}
 	res := probe(ctx, entry, method, target)
 	res.Route = route.Name
+	return res
+}
+
+// probeStatic checks that the configured file is present and a regular file.
+// No HTTP round-trip is performed; TargetURL is the absolute file path.
+func probeStatic(route *router.Route) Result {
+	res := Result{Route: route.Name, TargetURL: route.File}
+	fi, err := os.Stat(route.File)
+	if err != nil {
+		res.ErrorStage = StageConnect
+		if os.IsNotExist(err) {
+			res.Error = "static file not found"
+		} else {
+			res.Error = "static file not accessible"
+		}
+		return res
+	}
+	if fi.IsDir() || !fi.Mode().IsRegular() {
+		res.ErrorStage = StageResolve
+		res.Error = "static target is not a regular file"
+		return res
+	}
+	res.OK = true
+	res.Status = http.StatusOK
 	return res
 }
 

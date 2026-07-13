@@ -59,7 +59,8 @@ export function validatePrefix(
   return null
 }
 
-export function validateTarget(target: string): string | null {
+export function validateTarget(target: string, type: 'proxy' | 'static' = 'proxy'): string | null {
+  if (type === 'static') return validateStaticTarget(target)
   if (target === '') return 'Target is required.'
   if (target.includes('?')) return 'Target must not contain a query string.'
   if (target.includes('#')) return 'Target must not contain a fragment.'
@@ -74,6 +75,23 @@ export function validateTarget(target: string): string | null {
   }
   if (url.username !== '' || url.password !== '') return 'Target must not contain userinfo.'
   if (url.hostname === '') return 'Target must include a host.'
+  return null
+}
+
+/**
+ * Filesystem path to a single file (mirrors config.ResolveStaticFilePath).
+ * Absolute, or relative to the configuration file's directory on the server.
+ * The UI cannot resolve the server baseDir; relative paths are accepted here
+ * and validated fully when the server applies the config.
+ */
+export function validateStaticTarget(target: string): string | null {
+  if (target === '') return 'File path is required.'
+  if (target.includes('://')) return 'Use a filesystem path, not a URL (no file://).'
+  if (target.endsWith('/') || target.endsWith('\\')) {
+    return 'Must be a file path, not a directory (no trailing separator).'
+  }
+  // ".." is allowed (resolved against the config file directory on the server;
+  // may leave that directory). Absolute paths already have the same reach.
   return null
 }
 
@@ -99,15 +117,20 @@ export function previewMapping(
   prefixInput: string,
   target: string,
   stripPrefix: boolean,
+  type: 'proxy' | 'static' = 'proxy',
 ): PreviewMapping | null {
   const prefix = normalizePrefix(prefixInput)
   if (prefixSyntaxError(prefix) !== null) return null
-  if (validateTarget(target.trim()) !== null) return null
+  if (validateTarget(target.trim(), type) !== null) return null
+
+  const example = type === 'static' ? (prefix === '/' ? '/' : prefix) : '/chat/completions'
+  const from = type === 'static' ? example : prefix === '/' ? example : `${prefix}${example}`
+
+  if (type === 'static') {
+    return { from, to: `file ${target.trim()}` }
+  }
+
   const url = new URL(target.trim())
-
-  const example = '/chat/completions'
-  const from = prefix === '/' ? example : `${prefix}${example}`
-
   // Mirror internal/router: base := target path with trailing "/" trimmed once.
   let base = url.pathname
   if (base.endsWith('/')) base = base.slice(0, -1)

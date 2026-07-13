@@ -29,10 +29,10 @@ func buildSnapshot(t *testing.T, yamlText string) *runtime.Snapshot {
 	if err != nil {
 		t.Fatalf("config.Parse: %v", err)
 	}
-	if err := config.Validate(cfg); err != nil {
+	if err := config.Validate(cfg, ""); err != nil {
 		t.Fatalf("config.Validate: %v", err)
 	}
-	table, err := router.BuildTable(cfg.Routes)
+	table, err := router.BuildTable(cfg.Routes, "")
 	if err != nil {
 		t.Fatalf("router.BuildTable: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestMissingTransportReturns502(t *testing.T) {
 		Prefix:    "/g",
 		Target:    "http://127.0.0.1:9",
 		Transport: "no-such-transport",
-	}})
+	}}, "")
 	if err != nil {
 		t.Fatalf("BuildTable: %v", err)
 	}

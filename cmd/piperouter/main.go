@@ -113,7 +113,7 @@ func runValidate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	if err := config.Validate(cfg); err != nil {
+	if err := config.Validate(cfg, config.ConfigBaseDir(*cfgPath)); err != nil {
 		var verr *config.ValidationError
 		if errors.As(err, &verr) {
 			for _, issue := range verr.Issues {

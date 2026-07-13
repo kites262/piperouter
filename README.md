@@ -154,16 +154,17 @@ The `Host` header is set to the target host. Connection failures map to `502`, h
 
 ## ⚙️ Configuration
 
-**Route** — one prefix → target mapping:
+**Route** — one prefix → backend mapping (`type: proxy` or `static`):
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `name` | string | yes | — | unique, `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` |
 | `enabled` | bool | no | `true` | disabled routes never match |
+| `type` | enum | no | `proxy` | `proxy` reverse-proxies to a URL; `static` serves one local file |
 | `prefix` | string | yes | — | path prefix; starts with `/`, unique; non-root must not end with `/` |
-| `target` | string | yes | — | absolute `http`/`https` URL; no query, fragment or userinfo |
-| `strip_prefix` | bool | no | `true` | remove the matched prefix before joining the target path |
-| `transport` | string | no | `direct` | outbound transport to use |
+| `target` | string | yes | — | `proxy`: absolute `http`/`https` URL; `static`: path to a **file** (absolute, or relative to the config file's directory) |
+| `strip_prefix` | bool | no | `true` | `proxy` only: remove the matched prefix before joining the target path |
+| `transport` | string | no | `direct` | `proxy` only: outbound transport to use |
 
 **Transport** — one outbound link:
 

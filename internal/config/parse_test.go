@@ -42,6 +42,7 @@ func TestParseDefaults(t *testing.T) {
 		{"tls handshake timeout", c.Network.TLSHandshakeTimeout.Std(), 10 * time.Second},
 		{"response header timeout", c.Network.ResponseHeaderTimeout.Std(), 120 * time.Second},
 		{"idle connection timeout", c.Network.IdleConnectionTimeout.Std(), 90 * time.Second},
+		{"route type", c.Routes[0].Type, RouteTypeProxy},
 		{"route enabled", c.Routes[0].IsEnabled(), true},
 		{"route strip_prefix", c.Routes[0].StripsPrefix(), true},
 		{"route strip_forward_headers", c.Routes[0].StripsForwardHeaders(), true},

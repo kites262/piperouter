@@ -74,13 +74,22 @@ export interface TransportConfig {
   url: string
 }
 
-/** One prefix → target mapping. */
+/** Route handler mode. */
+export type RouteType = 'proxy' | 'static'
+
+/** One prefix → backend mapping. */
 export interface RouteConfig {
   name: string
   enabled: boolean
+  /** "proxy" (default reverse-proxy) or "static" (single local file). */
+  type: RouteType
   prefix: string
+  /**
+   * Proxy: absolute http(s) URL. Static: filesystem path to a regular file
+   * (absolute, or relative to the config file's directory on the server).
+   */
   target: string
-  /** Remove Forwarded/Via/X-Forwarded-* before forwarding (default true). */
+  /** Remove Forwarded/Via/X-Forwarded-* before forwarding (default true). Ignored for static. */
   strip_forward_headers: boolean
   strip_prefix: boolean
   transport: string

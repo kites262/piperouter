@@ -174,7 +174,9 @@ func (s *server) handleConfigValidate(w http.ResponseWriter, r *http.Request) {
 	cfg := req.Config.Clone()
 	cfg.Normalize()
 	resp := validateResponse{Valid: true, Issues: []string{}}
-	if err := config.Validate(cfg); err != nil {
+	// Resolve relative static targets against the live config file directory
+	// (same baseDir as Manager.Apply) so validate matches apply semantics.
+	if err := config.Validate(cfg, config.ConfigBaseDir(s.deps.Manager.ConfigPath())); err != nil {
 		resp.Valid = false
 		var ve *config.ValidationError
 		if errors.As(err, &ve) {

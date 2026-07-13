@@ -20,7 +20,7 @@ func route(name, prefix, target string) config.RouteConfig {
 
 func mustTable(t *testing.T, routes ...config.RouteConfig) *Table {
 	t.Helper()
-	tbl, err := BuildTable(routes)
+	tbl, err := BuildTable(routes, "")
 	if err != nil {
 		t.Fatalf("BuildTable: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestBuildTableFields(t *testing.T) {
 func TestBuildTableInvalidTarget(t *testing.T) {
 	_, err := BuildTable([]config.RouteConfig{
 		route("bad", "/bad", "https://exa mple.com/v1"),
-	})
+	}, "")
 	if err == nil {
 		t.Fatal("BuildTable with unparsable target: err = nil, want error")
 	}
@@ -209,7 +209,7 @@ func TestBuildTableInvalidTarget(t *testing.T) {
 	// target must not fail the build.
 	bad := route("bad", "/bad", "https://exa mple.com/v1")
 	bad.Enabled = boolp(false)
-	if _, err := BuildTable([]config.RouteConfig{bad}); err != nil {
+	if _, err := BuildTable([]config.RouteConfig{bad}, ""); err != nil {
 		t.Errorf("BuildTable skipping disabled bad target: %v", err)
 	}
 }

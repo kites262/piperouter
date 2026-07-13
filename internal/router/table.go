@@ -1,6 +1,7 @@
 // Package router implements the PipeRouter route table: longest-prefix
 // path matching on segment boundaries and escaped-path rewrite
-// (PRD §7, §8, §23.1–23.3).
+// (PRD §7, §8, §23.1–23.3). Static routes serve a single local file and
+// do not participate in URL rewrite.
 package router
 
 import (
@@ -12,15 +13,24 @@ import (
 	"github.com/kites262/piperouter/internal/config"
 )
 
-// Route is one compiled prefix→target mapping.
+// Route is one compiled prefix→backend mapping.
+//
+// For Type == config.RouteTypeProxy, Target is non-nil and TransportName
+// names the egress pool entry. For Type == config.RouteTypeStatic, File is
+// the absolute path of the single file to serve and Target is nil.
 type Route struct {
 	Name                string
-	Prefix              string   // validated: "/" or no trailing slash
-	Target              *url.URL // absolute, no query/fragment/userinfo
+	Type                string // config.RouteTypeProxy | config.RouteTypeStatic
+	Prefix              string // validated: "/" or no trailing slash
+	Target              *url.URL
+	File                string // absolute path; static only
 	StripPrefix         bool
 	StripForwardHeaders bool
 	TransportName       string
 }
+
+// IsStatic reports whether this route serves a local file.
+func (r *Route) IsStatic() bool { return r != nil && r.Type == config.RouteTypeStatic }
 
 // Table is an immutable set of enabled routes supporting longest-prefix
 // matching. Build a new Table on every config swap; never mutate one.
@@ -31,24 +41,41 @@ type Table struct {
 
 // BuildTable compiles the enabled routes of a validated configuration.
 // Disabled routes are skipped. The input is assumed to be pre-validated;
-// an unparsable target is a programming error and returns an error.
-func BuildTable(routes []config.RouteConfig) (*Table, error) {
+// an unparsable proxy target is a programming error and returns an error.
+//
+// baseDir is the configuration file's directory (config.ConfigBaseDir).
+// Static targets are resolved to an absolute path here exactly once per
+// config swap and stored on Route.File — the request hot path never joins
+// or Abs's paths. Pass "" only when all static targets are already absolute.
+func BuildTable(routes []config.RouteConfig, baseDir string) (*Table, error) {
 	t := &Table{}
 	for _, rc := range routes {
 		if !rc.IsEnabled() {
 			continue
 		}
-		target, err := url.Parse(rc.Target)
-		if err != nil {
-			return nil, fmt.Errorf("route %q: invalid target: %w", rc.Name, err)
-		}
 		r := &Route{
 			Name:                rc.Name,
+			Type:                rc.EffectiveType(),
 			Prefix:              rc.Prefix,
-			Target:              target,
 			StripPrefix:         rc.StripsPrefix(),
 			StripForwardHeaders: rc.StripsForwardHeaders(),
 			TransportName:       rc.Transport,
+		}
+		switch r.Type {
+		case config.RouteTypeStatic:
+			// Resolve once at build time; serveStatic only reads r.File.
+			abs, err := config.ResolveStaticFilePath(rc.Target, baseDir)
+			if err != nil {
+				return nil, fmt.Errorf("route %q: %w", rc.Name, err)
+			}
+			r.File = abs
+			r.TransportName = "" // no egress for static
+		default:
+			target, err := url.Parse(rc.Target)
+			if err != nil {
+				return nil, fmt.Errorf("route %q: invalid target: %w", rc.Name, err)
+			}
+			r.Target = target
 		}
 		t.byLength = append(t.byLength, r)
 		t.byName = append(t.byName, r)

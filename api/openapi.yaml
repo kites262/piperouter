@@ -738,7 +738,10 @@ components:
 
     RouteConfig:
       type: object
-      description: One prefix → target mapping.
+      description: >
+        One prefix → backend mapping. Type "proxy" (default) reverse-proxies
+        to an http(s) URL; type "static" serves one local file for every
+        matching request.
       required: [name, prefix, target]
       properties:
         name:
@@ -751,6 +754,15 @@ components:
           nullable: true
           description: Defaults to true when omitted.
           default: true
+        type:
+          type: string
+          description: >
+            Route mode. "proxy" reverse-proxies to target; "static" serves
+            the single local file at target (absolute path, not a directory).
+            Empty / omitted is normalized to "proxy".
+          enum: [proxy, static]
+          default: proxy
+          example: proxy
         prefix:
           type: string
           description: >
@@ -761,27 +773,36 @@ components:
         target:
           type: string
           description: >
-            Absolute http/https target URL without userinfo, query or
-            fragment.
+            For type proxy: absolute http/https URL without userinfo, query
+            or fragment. For type static: filesystem path to a regular file
+            — absolute, or relative to the configuration file's directory
+            (resolved once at load/reload into the route table; YAML is not
+            rewritten). Directories and file:// URLs are not supported.
           example: https://api.openai.com/v1
         strip_forward_headers:
           type: boolean
           nullable: true
           description: >
-            Remove proxy metadata request headers (Forwarded, Via,
-            X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Proto) before
-            forwarding, so the target never sees them. Set to false to pass
-            inbound values through unchanged. PipeRouter never adds these
-            headers either way. Defaults to true when omitted.
+            Proxy routes only (ignored for static). Remove proxy metadata
+            request headers (Forwarded, Via, X-Forwarded-For,
+            X-Forwarded-Host, X-Forwarded-Proto) before forwarding, so the
+            target never sees them. Set to false to pass inbound values
+            through unchanged. PipeRouter never adds these headers either
+            way. Defaults to true when omitted.
           default: true
         strip_prefix:
           type: boolean
           nullable: true
-          description: Remove the matched prefix before joining with the target base path. Defaults to true when omitted.
+          description: >
+            Proxy routes only (ignored for static). Remove the matched
+            prefix before joining with the target base path. Defaults to
+            true when omitted.
           default: true
         transport:
           type: string
-          description: Name of the transport to use. Defaults to the built-in "direct" when omitted.
+          description: >
+            Proxy routes only (ignored for static). Name of the transport
+            to use. Defaults to the built-in "direct" when omitted.
           default: direct
           example: jp-proxy
 

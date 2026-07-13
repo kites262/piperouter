@@ -159,20 +159,23 @@ const rows = computed<RouteRow[]>(() => {
   const types = transportTypes.value
   return (routes.value ?? []).map((route) => {
     const m = metrics.get(route.name) ?? null
-    const type = types.get(route.transport)
+    const isStatic = route.type === 'static'
+    const type = isStatic ? 'static' : types.get(route.transport)
     const rate = errorRate(m)
     const last = m?.last_request_at ?? null
     return {
       route,
       transportVariant:
-        type === undefined
-          ? 'danger'
-          : type === 'direct'
-            ? 'muted'
-            : type === 'http'
-              ? 'accent'
-              : 'default',
-      transportMissing: type === undefined,
+        isStatic
+          ? 'success'
+          : type === undefined
+            ? 'danger'
+            : type === 'direct'
+              ? 'muted'
+              : type === 'http'
+                ? 'accent'
+                : 'default',
+      transportMissing: !isStatic && type === undefined,
       requests: m === null ? '—' : numberFormat.format(m.total),
       errorRateText: formatErrorRate(rate),
       errorRateClass: rateClass(rate),
@@ -390,7 +393,8 @@ function goDetail(name: string): void {
               </Tooltip>
             </Td>
             <Td>
-              <Tooltip v-if="row.transportMissing" text="Transport not found in config">
+              <Badge v-if="row.route.type === 'static'" variant="success" mono>static</Badge>
+              <Tooltip v-else-if="row.transportMissing" text="Transport not found in config">
                 <Badge variant="danger" mono>{{ row.route.transport }}</Badge>
               </Tooltip>
               <Badge v-else :variant="row.transportVariant" mono>

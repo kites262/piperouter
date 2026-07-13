@@ -127,19 +127,40 @@ const (
 	TransportSOCKS5 = "socks5"
 )
 
-// RouteConfig declares one prefix→target mapping (PRD §5.1).
+// Route type enum values: how the data plane handles a matched request.
+const (
+	RouteTypeProxy  = "proxy"  // reverse-proxy to an http(s) target (default)
+	RouteTypeStatic = "static" // serve one local file from target (absolute path)
+)
+
+// RouteConfig declares one prefix→backend mapping (PRD §5.1).
+//
+// Type selects the handler:
+//   - "proxy" (default): Target is an absolute http/https URL; traffic is
+//     reverse-proxied via Transport.
+//   - "static": Target is an absolute filesystem path to a single regular
+//     file (not a directory). Every request matching Prefix is served that
+//     file. strip_prefix, strip_forward_headers and transport are ignored.
 type RouteConfig struct {
 	Name    string `yaml:"name" json:"name"`
 	Enabled *bool  `yaml:"enabled" json:"enabled"`
-	Prefix  string `yaml:"prefix" json:"prefix"`
-	Target  string `yaml:"target" json:"target"`
+	// Type is "proxy" or "static". Empty means "proxy" and is normalized.
+	Type   string `yaml:"type" json:"type"`
+	Prefix string `yaml:"prefix" json:"prefix"`
+	// Target is an absolute http/https URL for type proxy, or an absolute
+	// local file path for type static.
+	Target string `yaml:"target" json:"target"`
 	// StripForwardHeaders removes proxy metadata request headers (Forwarded,
 	// Via, X-Forwarded-For/-Host/-Proto) before forwarding, so a fronting
 	// reverse proxy never leaks client details to the target. Default true;
-	// set false to pass inbound values through unchanged.
-	StripForwardHeaders *bool  `yaml:"strip_forward_headers" json:"strip_forward_headers"`
-	StripPrefix         *bool  `yaml:"strip_prefix" json:"strip_prefix"`
-	Transport           string `yaml:"transport" json:"transport"`
+	// set false to pass inbound values through unchanged. Ignored for static.
+	StripForwardHeaders *bool `yaml:"strip_forward_headers" json:"strip_forward_headers"`
+	// StripPrefix removes the matched prefix before joining with the target
+	// path. Default true. Ignored for static.
+	StripPrefix *bool `yaml:"strip_prefix" json:"strip_prefix"`
+	// Transport is the egress link for proxy routes. Default "direct".
+	// Ignored for static.
+	Transport string `yaml:"transport" json:"transport"`
 }
 
 func (r RouteConfig) IsEnabled() bool    { return r.Enabled == nil || *r.Enabled }
@@ -147,6 +168,17 @@ func (r RouteConfig) StripsPrefix() bool { return r.StripPrefix == nil || *r.Str
 func (r RouteConfig) StripsForwardHeaders() bool {
 	return r.StripForwardHeaders == nil || *r.StripForwardHeaders
 }
+
+// EffectiveType returns the route type after treating empty as proxy.
+func (r RouteConfig) EffectiveType() string {
+	if r.Type == "" {
+		return RouteTypeProxy
+	}
+	return r.Type
+}
+
+// IsStatic reports whether this route serves a local file.
+func (r RouteConfig) IsStatic() bool { return r.EffectiveType() == RouteTypeStatic }
 func (a AdminServerConfig) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
 func (w WebConfig) IsEnabled() bool         { return w.Enabled == nil || *w.Enabled }
 
@@ -195,6 +227,9 @@ func (c *Config) Normalize() {
 		c.Network.IdleConnectionTimeout = Duration(90 * time.Second)
 	}
 	for i := range c.Routes {
+		if c.Routes[i].Type == "" {
+			c.Routes[i].Type = RouteTypeProxy
+		}
 		if c.Routes[i].Enabled == nil {
 			c.Routes[i].Enabled = boolPtr(true)
 		}

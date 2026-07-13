@@ -14,7 +14,10 @@ const props = defineProps<{
   transportType?: string
 }>()
 
+const isStatic = computed(() => props.route.type === 'static')
+
 const targetURL = computed(() => {
+  if (isStatic.value) return null
   try {
     return new URL(props.route.target)
   } catch {
@@ -33,6 +36,27 @@ interface Stage {
 
 const stages = computed<Stage[]>(() => {
   const r = props.route
+  if (isStatic.value) {
+    return [
+      { key: 'client', label: 'Client', value: 'HTTP', sub: 'inbound', title: 'Incoming client request' },
+      { key: 'prefix', label: 'Prefix', value: r.prefix, sub: 'longest match', title: r.prefix },
+      {
+        key: 'type',
+        label: 'Type',
+        value: 'static',
+        sub: 'single file',
+        title: 'type: static',
+      },
+      {
+        key: 'target',
+        label: 'File',
+        value: r.target,
+        sub: 'GET/HEAD',
+        title: r.target,
+        accent: true,
+      },
+    ]
+  }
   return [
     { key: 'client', label: 'Client', value: 'HTTP', sub: 'inbound', title: 'Incoming client request' },
     { key: 'prefix', label: 'Prefix', value: r.prefix, sub: 'longest match', title: r.prefix },
