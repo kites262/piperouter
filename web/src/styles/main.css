@@ -207,7 +207,8 @@
   --shadow-elevate-hover: 0 2px 8px rgb(0 0 0 / 0.4), 0 24px 56px -18px rgb(0 0 0 / 0.72),
     0 0 0 1px rgb(255 255 255 / 0.04);
   --shadow-glow-accent: 0 0 32px -8px rgb(109 124 255 / 0.45);
-  --grid-color: rgb(148 163 197 / 0.035);
+  /* Grid must stay readable on the deep canvas (was ~0.035 — effectively lost). */
+  --grid-color: rgb(148 163 197 / 0.07);
   --ambient-a: rgb(109 124 255 / 0.16);
   --ambient-b: rgb(56 189 248 / 0.1);
   --ambient-c: rgb(167 139 250 / 0.08);
@@ -278,16 +279,29 @@
 @layer base {
   html {
     color-scheme: dark;
+    /* Fallback only — the animated canvas lives on body::before. */
+    background-color: var(--color-bg);
   }
 
   body {
-    background-color: var(--color-bg);
+    /* Transparent so the fixed mesh/grid layer is not painted over.
+       isolation keeps body::before (z-index < 0) inside this stacking
+       context instead of disappearing under the root canvas. */
+    background-color: transparent;
+    background-image: none;
     color: var(--color-fg);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* Base canvas — mesh sits in a fixed layer so drift can animate cleanly. */
-    background-image: none;
+    isolation: isolate;
+    min-height: 100%;
+  }
+
+  /* App root sits above the ambient layers. */
+  #app {
+    position: relative;
+    z-index: 0;
+    min-height: 100%;
   }
 
   ::selection {
@@ -295,7 +309,7 @@
   }
 }
 
-/* Ambient mesh + instrument grid (fixed, behind all content). */
+/* Ambient mesh + instrument grid (fixed, behind all UI). */
 body::before {
   content: "";
   position: fixed;
@@ -431,7 +445,7 @@ body::after {
   --shadow-elevate-hover: 0 2px 8px rgb(15 23 42 / 0.07), 0 24px 48px -16px rgb(15 23 42 / 0.22),
     0 0 0 1px rgb(15 23 42 / 0.04);
   --shadow-glow-accent: 0 0 28px -8px rgb(85 96 230 / 0.35);
-  --grid-color: rgb(15 23 42 / 0.04);
+  --grid-color: rgb(15 23 42 / 0.08);
   --ambient-a: rgb(85 96 230 / 0.14);
   --ambient-b: rgb(14 165 233 / 0.1);
   --ambient-c: rgb(167 139 250 / 0.09);
