@@ -2,16 +2,16 @@
      Built page-locally (tighter cells than the shared Table kit) with
      table-fixed columns so newly polled rows never cause horizontal jank.
      No artificial min-width — horizontal scroll only when content overflows.
-     Never renders bodies or headers — except captured forward headers
-     (Forwarded/Via/X-Forwarded-*), shown in a collapsible detail row.
+     Main columns: Time / IP / Route / Status / Duration / Stream / Path.
+     Method, Transport, Error, and forward headers live in a collapsible
+     detail row so Path can use the remaining width on the right.
      IP column is derived from X-Forwarded-For when present. -->
 <script setup lang="ts">
-import { ArrowLeftRight, ChevronRight, Rss } from 'lucide-vue-next'
+import { ArrowLeftRight, ChevronRight, FileText, Waves } from 'lucide-vue-next'
 import { ref } from 'vue'
 
 import type { AccessLogEntry } from '@/api/types'
 import Badge from '@/components/ui/Badge.vue'
-import Tooltip from '@/components/ui/Tooltip.vue'
 
 defineProps<{ entries: AccessLogEntry[] }>()
 
@@ -106,12 +106,20 @@ function statusVariant(status: number): BadgeVariant {
   if (status >= 500) return 'danger'
   return 'muted'
 }
+
+function onRowKeydown(event: KeyboardEvent, entry: AccessLogEntry): void {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    toggleExpand(entry)
+  }
+}
+
 </script>
 
 <template>
   <!-- overflow-x-auto only kicks in when the table genuinely exceeds the
        card (no artificial min-width). table-fixed + truncate cells keep
-       columns stable as rows poll in. -->
+       columns stable as rows poll in. Path is the flexible last column. -->
   <div class="card-flat overflow-x-auto">
     <table class="w-full table-fixed border-collapse font-mono text-xs">
       <colgroup>
@@ -119,13 +127,10 @@ function statusVariant(status: number): BadgeVariant {
         <col class="w-28" />
         <col class="w-36" />
         <col class="w-32" />
-        <col class="w-20" />
-        <col />
-        <col class="w-18" />
+        <col class="w-14" />
         <col class="w-24" />
-        <col class="w-28" />
-        <col class="w-16" />
-        <col class="w-44" />
+        <col class="w-14" />
+        <col />
       </colgroup>
       <thead class="border-b border-border">
         <tr>
@@ -133,95 +138,112 @@ function statusVariant(status: number): BadgeVariant {
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Time</th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">IP</th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Route</th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Method</th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Path</th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Status</th>
-          <th class="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-fg-muted">
+          <th class="px-2 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Status</th>
+          <th class="whitespace-nowrap px-2 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-fg-muted">
             Duration (ms)
           </th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Transport</th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Stream</th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Error</th>
+          <th class="px-2 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Stream</th>
+          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Path</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-border">
         <template v-for="(entry, index) in entries" :key="rowKey(entry, index)">
-        <tr class="transition-colors duration-150 hover:bg-surface-raised/50">
-          <td class="px-1 py-1.5 text-center">
-            <button
-              v-if="hasForwardHeaders(entry)"
-              type="button"
-              class="inline-flex h-5 w-5 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
-              :title="isExpanded(entry) ? 'Hide forward headers' : 'Show forward headers'"
-              :aria-expanded="isExpanded(entry)"
-              @click="toggleExpand(entry)"
-            >
+          <tr
+            class="cursor-pointer transition-colors duration-150 hover:bg-surface-raised/50 focus-visible:bg-surface-raised/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+            tabindex="0"
+            role="button"
+            :aria-expanded="isExpanded(entry)"
+            :title="isExpanded(entry) ? 'Hide details' : 'Show details'"
+            @click="toggleExpand(entry)"
+            @keydown="onRowKeydown($event, entry)"
+          >
+            <td class="px-1 py-1.5 text-center">
               <ChevronRight
-                class="h-3.5 w-3.5 transition-transform duration-150"
+                class="mx-auto h-3.5 w-3.5 text-fg-muted transition-transform duration-150"
                 :class="isExpanded(entry) ? 'rotate-90' : ''"
+                aria-hidden="true"
               />
-              <span class="sr-only">Forward headers</span>
-            </button>
-          </td>
-          <td class="whitespace-nowrap px-3 py-1.5 text-fg-secondary">{{ formatTime(entry.time) }}</td>
-          <td class="truncate px-3 py-1.5" :title="clientIp(entry) || undefined">
-            <span v-if="clientIp(entry)" class="text-fg-secondary">{{ clientIp(entry) }}</span>
-            <span v-else class="text-fg-muted">—</span>
-          </td>
-          <td class="truncate px-3 py-1.5" :title="entry.route !== '' ? entry.route : undefined">
-            <span v-if="entry.route !== ''" class="text-fg-secondary">{{ entry.route }}</span>
-            <span v-else class="text-fg-muted">—</span>
-          </td>
-          <td class="px-3 py-1.5">
-            <Badge :variant="methodVariant(entry.method)" mono>{{ entry.method }}</Badge>
-          </td>
-          <td class="truncate px-3 py-1.5 text-fg" :title="entry.path">{{ entry.path }}</td>
-          <td class="px-3 py-1.5">
-            <Badge :variant="statusVariant(entry.status)" mono>
-              {{ entry.status > 0 ? entry.status : '—' }}
-            </Badge>
-          </td>
-          <td class="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-fg-secondary">
-            {{ formatDuration(entry.duration_ms) }}
-          </td>
-          <td class="truncate px-3 py-1.5 text-fg-secondary" :title="entry.transport !== '' ? entry.transport : undefined">
-            <template v-if="entry.transport !== ''">{{ entry.transport }}</template>
-            <span v-else class="text-fg-muted">—</span>
-          </td>
-          <td class="px-3 py-1.5">
-            <span v-if="entry.streaming === 'sse'" class="inline-flex text-accent" title="SSE">
-              <Rss class="h-3.5 w-3.5" />
-              <span class="sr-only">SSE</span>
-            </span>
-            <span v-else-if="entry.streaming === 'websocket'" class="inline-flex text-accent" title="WebSocket">
-              <ArrowLeftRight class="h-3.5 w-3.5" />
-              <span class="sr-only">WebSocket</span>
-            </span>
-            <span v-else class="text-fg-muted">—</span>
-          </td>
-          <td class="overflow-hidden px-3 py-1.5">
-            <Tooltip v-if="entry.error !== ''" :text="entry.error" class="w-full max-w-full">
-              <span class="block w-full truncate text-danger">{{ entry.error }}</span>
-            </Tooltip>
-            <span v-else class="text-fg-muted">—</span>
-          </td>
-        </tr>
-        <!-- Collapsible detail: only the forward headers the client sent. -->
-        <tr v-if="hasForwardHeaders(entry) && isExpanded(entry)" class="bg-bg-deep/40">
-          <td class="px-1 py-0" />
-          <td :colspan="10" class="px-3 pb-2.5 pt-1">
-            <dl class="space-y-0.5">
-              <div
-                v-for="h in entry.forward_headers"
-                :key="h.name"
-                class="flex items-baseline gap-2"
+            </td>
+            <td class="whitespace-nowrap px-3 py-1.5 text-fg-secondary">{{ formatTime(entry.time) }}</td>
+            <td class="truncate px-3 py-1.5" :title="clientIp(entry) || undefined">
+              <span v-if="clientIp(entry)" class="text-fg-secondary">{{ clientIp(entry) }}</span>
+              <span v-else class="text-fg-muted">—</span>
+            </td>
+            <td class="truncate px-3 py-1.5" :title="entry.route !== '' ? entry.route : undefined">
+              <span v-if="entry.route !== ''" class="text-fg-secondary">{{ entry.route }}</span>
+              <span v-else class="text-fg-muted">—</span>
+            </td>
+            <td class="px-2 py-1.5">
+              <Badge :variant="statusVariant(entry.status)" mono>
+                {{ entry.status > 0 ? entry.status : '—' }}
+              </Badge>
+            </td>
+            <td class="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-fg-secondary">
+              {{ formatDuration(entry.duration_ms) }}
+            </td>
+            <td class="px-2 py-1.5">
+              <!-- SSE = continuous waves; WS = duplex; unary = buffered document. -->
+              <span
+                v-if="entry.streaming === 'sse'"
+                class="inline-flex text-accent"
+                title="SSE"
               >
-                <dt class="shrink-0 text-[11px] text-fg-muted">{{ h.name }}:</dt>
-                <dd class="min-w-0 break-all text-fg-secondary">{{ h.value }}</dd>
-              </div>
-            </dl>
-          </td>
-        </tr>
+                <Waves class="h-3.5 w-3.5" aria-hidden="true" />
+                <span class="sr-only">SSE</span>
+              </span>
+              <span
+                v-else-if="entry.streaming === 'websocket'"
+                class="inline-flex text-accent"
+                title="WebSocket"
+              >
+                <ArrowLeftRight class="h-3.5 w-3.5" aria-hidden="true" />
+                <span class="sr-only">WebSocket</span>
+              </span>
+              <span v-else class="inline-flex text-fg-muted" title="Buffered (not a stream)">
+                <FileText class="h-3.5 w-3.5" aria-hidden="true" />
+                <span class="sr-only">Buffered</span>
+              </span>
+            </td>
+            <td class="truncate px-3 py-1.5 text-fg" :title="entry.path">{{ entry.path }}</td>
+          </tr>
+          <!-- Collapsible detail: Method / Transport / Error + forward headers. -->
+          <tr v-if="isExpanded(entry)" class="bg-bg-deep/40">
+            <td class="px-1 py-0" />
+            <td :colspan="7" class="px-3 pb-2.5 pt-1.5">
+              <dl class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <dt class="shrink-0 text-[11px] text-fg-muted">Method</dt>
+                  <dd>
+                    <Badge :variant="methodVariant(entry.method)" mono>{{ entry.method }}</Badge>
+                  </dd>
+                </div>
+                <div class="flex items-baseline gap-2 min-w-0">
+                  <dt class="shrink-0 text-[11px] text-fg-muted">Transport</dt>
+                  <dd class="min-w-0 truncate text-fg-secondary" :title="entry.transport || undefined">
+                    <template v-if="entry.transport !== ''">{{ entry.transport }}</template>
+                    <span v-else class="text-fg-muted">—</span>
+                  </dd>
+                </div>
+                <div class="flex items-start gap-2 min-w-0">
+                  <dt class="shrink-0 text-[11px] text-fg-muted">Error</dt>
+                  <dd class="min-w-0 break-all">
+                    <span v-if="entry.error !== ''" class="text-danger">{{ entry.error }}</span>
+                    <span v-else class="text-fg-muted">—</span>
+                  </dd>
+                </div>
+              </dl>
+              <dl v-if="hasForwardHeaders(entry)" class="mt-2 space-y-0.5 border-t border-border/60 pt-2">
+                <div
+                  v-for="h in entry.forward_headers"
+                  :key="h.name"
+                  class="flex items-baseline gap-2"
+                >
+                  <dt class="shrink-0 text-[11px] text-fg-muted">{{ h.name }}:</dt>
+                  <dd class="min-w-0 break-all text-fg-secondary">{{ h.value }}</dd>
+                </div>
+              </dl>
+            </td>
+          </tr>
         </template>
       </tbody>
     </table>
