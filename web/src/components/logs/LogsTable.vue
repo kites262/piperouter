@@ -1,8 +1,10 @@
 <!-- Flat dense monospace access-log table (PRD §19.6).
-     Built page-locally (tighter cells than the shared Table kit) with a fixed
-     column layout so newly polled rows never cause horizontal jank.
+     Built page-locally (tighter cells than the shared Table kit) with
+     table-fixed columns so newly polled rows never cause horizontal jank.
+     No artificial min-width — horizontal scroll only when content overflows.
      Never renders bodies or headers — except captured forward headers
-     (Forwarded/Via/X-Forwarded-*), shown in a collapsible detail row. -->
+     (Forwarded/Via/X-Forwarded-*), shown in a collapsible detail row.
+     IP column is derived from X-Forwarded-For when present. -->
 <script setup lang="ts">
 import { ArrowLeftRight, ChevronRight, Rss } from 'lucide-vue-next'
 import { ref } from 'vue'
@@ -49,6 +51,20 @@ function hasForwardHeaders(entry: AccessLogEntry): boolean {
   return (entry.forward_headers?.length ?? 0) > 0
 }
 
+/**
+ * Client IP from X-Forwarded-For only (leftmost address in the chain).
+ * Empty when the client did not send that header.
+ */
+function clientIp(entry: AccessLogEntry): string {
+  const xff = entry.forward_headers?.find(
+    (h) => h.name.toLowerCase() === 'x-forwarded-for',
+  )
+  if (!xff?.value) return ''
+  // "client, proxy1, proxy2" — original client is leftmost.
+  const first = xff.value.split(',')[0]?.trim() ?? ''
+  return first
+}
+
 /** HH:MM:SS.mmm in the viewer's local time zone. */
 function formatTime(iso: string): string {
   const d = new Date(iso)
@@ -93,11 +109,15 @@ function statusVariant(status: number): BadgeVariant {
 </script>
 
 <template>
+  <!-- overflow-x-auto only kicks in when the table genuinely exceeds the
+       card (no artificial min-width). table-fixed + truncate cells keep
+       columns stable as rows poll in. -->
   <div class="card-flat overflow-x-auto">
-    <table class="w-full min-w-[66rem] table-fixed border-collapse font-mono text-xs">
+    <table class="w-full table-fixed border-collapse font-mono text-xs">
       <colgroup>
         <col class="w-8" />
         <col class="w-28" />
+        <col class="w-36" />
         <col class="w-32" />
         <col class="w-20" />
         <col />
@@ -111,6 +131,7 @@ function statusVariant(status: number): BadgeVariant {
         <tr>
           <th class="px-1 py-2"><span class="sr-only">Details</span></th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Time</th>
+          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">IP</th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Route</th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Method</th>
           <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Path</th>
@@ -143,6 +164,10 @@ function statusVariant(status: number): BadgeVariant {
             </button>
           </td>
           <td class="whitespace-nowrap px-3 py-1.5 text-fg-secondary">{{ formatTime(entry.time) }}</td>
+          <td class="truncate px-3 py-1.5" :title="clientIp(entry) || undefined">
+            <span v-if="clientIp(entry)" class="text-fg-secondary">{{ clientIp(entry) }}</span>
+            <span v-else class="text-fg-muted">—</span>
+          </td>
           <td class="truncate px-3 py-1.5" :title="entry.route !== '' ? entry.route : undefined">
             <span v-if="entry.route !== ''" class="text-fg-secondary">{{ entry.route }}</span>
             <span v-else class="text-fg-muted">—</span>
@@ -184,7 +209,7 @@ function statusVariant(status: number): BadgeVariant {
         <!-- Collapsible detail: only the forward headers the client sent. -->
         <tr v-if="hasForwardHeaders(entry) && isExpanded(entry)" class="bg-bg-deep/40">
           <td class="px-1 py-0" />
-          <td :colspan="9" class="px-3 pb-2.5 pt-1">
+          <td :colspan="10" class="px-3 pb-2.5 pt-1">
             <dl class="space-y-0.5">
               <div
                 v-for="h in entry.forward_headers"
