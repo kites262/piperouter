@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: PipeRouter Admin API
-  version: 0.3.2
+  version: 0.3.3
   description: |
     REST/JSON management API for PipeRouter, a lightweight HTTP distribution
     proxy. Served under `/api/v1` by the admin server (default

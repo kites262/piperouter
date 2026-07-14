@@ -2,9 +2,9 @@
      Built page-locally (tighter cells than the shared Table kit) with
      table-fixed columns so newly polled rows never cause horizontal jank.
      No artificial min-width — horizontal scroll only when content overflows.
-     Main columns: Time / IP / Route / Status / Duration / Stream / Path.
-     Method, Transport, Error, and forward headers live in a collapsible
-     detail row so Path can use the remaining width on the right.
+     Main columns: Time / IP / Route / Status / Duration / Path.
+     Method, Transport, Stream, Error, and forward headers live in a
+     collapsible detail row so Path can use the remaining width on the right.
      IP column is derived from X-Forwarded-For when present. -->
 <script setup lang="ts">
 import { ArrowLeftRight, ChevronRight, FileText, Waves } from 'lucide-vue-next'
@@ -128,22 +128,20 @@ function onRowKeydown(event: KeyboardEvent, entry: AccessLogEntry): void {
         <col class="w-36" />
         <col class="w-32" />
         <col class="w-14" />
-        <col class="w-24" />
-        <col class="w-14" />
+        <col class="w-20" />
         <col />
       </colgroup>
       <thead class="border-b border-border">
         <tr>
           <th class="px-1 py-2"><span class="sr-only">Details</span></th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Time</th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">IP</th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Route</th>
-          <th class="px-2 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Status</th>
-          <th class="whitespace-nowrap px-2 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-fg-muted">
-            Duration (ms)
+          <th class="px-3 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">Time</th>
+          <th class="px-3 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">IP</th>
+          <th class="px-3 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">Route</th>
+          <th class="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">Status</th>
+          <th class="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted" title="milliseconds">
+            Duration
           </th>
-          <th class="px-2 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Stream</th>
-          <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-fg-muted">Path</th>
+          <th class="px-3 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">Path</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-border">
@@ -164,52 +162,29 @@ function onRowKeydown(event: KeyboardEvent, entry: AccessLogEntry): void {
                 aria-hidden="true"
               />
             </td>
-            <td class="whitespace-nowrap px-3 py-1.5 text-fg-secondary">{{ formatTime(entry.time) }}</td>
-            <td class="truncate px-3 py-1.5" :title="clientIp(entry) || undefined">
+            <td class="whitespace-nowrap px-3 py-1.5 text-center text-fg-secondary">{{ formatTime(entry.time) }}</td>
+            <td class="truncate px-3 py-1.5 text-center" :title="clientIp(entry) || undefined">
               <span v-if="clientIp(entry)" class="text-fg-secondary">{{ clientIp(entry) }}</span>
               <span v-else class="text-fg-muted">—</span>
             </td>
-            <td class="truncate px-3 py-1.5" :title="entry.route !== '' ? entry.route : undefined">
+            <td class="truncate px-3 py-1.5 text-center" :title="entry.route !== '' ? entry.route : undefined">
               <span v-if="entry.route !== ''" class="text-fg-secondary">{{ entry.route }}</span>
               <span v-else class="text-fg-muted">—</span>
             </td>
-            <td class="px-2 py-1.5">
+            <td class="px-2 py-1.5 text-center">
               <Badge :variant="statusVariant(entry.status)" mono>
                 {{ entry.status > 0 ? entry.status : '—' }}
               </Badge>
             </td>
-            <td class="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-fg-secondary">
+            <td class="whitespace-nowrap px-2 py-1.5 text-center tabular-nums text-fg-secondary">
               {{ formatDuration(entry.duration_ms) }}
             </td>
-            <td class="px-2 py-1.5">
-              <!-- SSE = continuous waves; WS = duplex; unary = buffered document. -->
-              <span
-                v-if="entry.streaming === 'sse'"
-                class="inline-flex text-accent"
-                title="SSE"
-              >
-                <Waves class="h-3.5 w-3.5" aria-hidden="true" />
-                <span class="sr-only">SSE</span>
-              </span>
-              <span
-                v-else-if="entry.streaming === 'websocket'"
-                class="inline-flex text-accent"
-                title="WebSocket"
-              >
-                <ArrowLeftRight class="h-3.5 w-3.5" aria-hidden="true" />
-                <span class="sr-only">WebSocket</span>
-              </span>
-              <span v-else class="inline-flex text-fg-muted" title="Buffered (not a stream)">
-                <FileText class="h-3.5 w-3.5" aria-hidden="true" />
-                <span class="sr-only">Buffered</span>
-              </span>
-            </td>
-            <td class="truncate px-3 py-1.5 text-fg" :title="entry.path">{{ entry.path }}</td>
+            <td class="truncate border-l border-dashed border-border px-3 py-1.5 text-fg" :title="entry.path">{{ entry.path }}</td>
           </tr>
-          <!-- Collapsible detail: Method / Transport / Error + forward headers. -->
+          <!-- Collapsible detail: Method / Transport / Stream / Error + forward headers. -->
           <tr v-if="isExpanded(entry)" class="bg-bg-deep/40">
             <td class="px-1 py-0" />
-            <td :colspan="7" class="px-3 pb-2.5 pt-1.5">
+            <td :colspan="6" class="px-3 pb-2.5 pt-1.5">
               <dl class="space-y-1">
                 <div class="flex items-center gap-2">
                   <dt class="shrink-0 text-[11px] text-fg-muted">Method</dt>
@@ -222,6 +197,24 @@ function onRowKeydown(event: KeyboardEvent, entry: AccessLogEntry): void {
                   <dd class="min-w-0 truncate text-fg-secondary" :title="entry.transport || undefined">
                     <template v-if="entry.transport !== ''">{{ entry.transport }}</template>
                     <span v-else class="text-fg-muted">—</span>
+                  </dd>
+                </div>
+                <div class="flex items-center gap-2">
+                  <dt class="shrink-0 text-[11px] text-fg-muted">Stream</dt>
+                  <!-- SSE = continuous waves; WS = duplex; unary = buffered document. -->
+                  <dd class="flex items-center gap-1.5">
+                    <template v-if="entry.streaming === 'sse'">
+                      <Waves class="h-3.5 w-3.5 text-accent" aria-hidden="true" />
+                      <span class="text-fg-secondary">SSE</span>
+                    </template>
+                    <template v-else-if="entry.streaming === 'websocket'">
+                      <ArrowLeftRight class="h-3.5 w-3.5 text-accent" aria-hidden="true" />
+                      <span class="text-fg-secondary">WebSocket</span>
+                    </template>
+                    <template v-else>
+                      <FileText class="h-3.5 w-3.5 text-fg-muted" aria-hidden="true" />
+                      <span class="text-fg-muted">Buffered</span>
+                    </template>
                   </dd>
                 </div>
                 <div class="flex items-start gap-2 min-w-0">
