@@ -19,7 +19,10 @@ func (h *handler) serveStatic(rw *responseRecorder, r *http.Request, route *rout
 	case http.MethodGet, http.MethodHead:
 	default:
 		rw.Header().Set("Allow", "GET, HEAD")
-		writeJSONError(rw, http.StatusMethodNotAllowed, errMethodNotAllowed)
+		// Stock Go 405 (what net/http's mux emits), not the JSON envelope:
+		// static routes face the open internet, and a distinctive body
+		// would fingerprint the gateway to probing clients.
+		http.Error(rw, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		st.errClass = errMethodNotAllowed
 		return
 	}

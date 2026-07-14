@@ -158,6 +158,14 @@ routes:
 	if allow := resp.Header.Get("Allow"); !strings.Contains(allow, "GET") {
 		t.Errorf("Allow = %q, want GET", allow)
 	}
+	// Stock Go 405 text, not the JSON envelope (anonymous like the 404).
+	body, _ := io.ReadAll(resp.Body)
+	if got := strings.TrimSpace(string(body)); got != http.StatusText(http.StatusMethodNotAllowed) {
+		t.Errorf("body = %q, want the stock %q text", got, http.StatusText(http.StatusMethodNotAllowed))
+	}
+	if strings.Contains(string(body), "method_not_allowed") {
+		t.Errorf("body = %q, must not leak the internal error code", body)
+	}
 }
 
 func TestServeStaticMissingFile(t *testing.T) {

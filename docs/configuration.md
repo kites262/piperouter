@@ -328,13 +328,13 @@ Paths that miss an exact route fall through to the remaining routes (and to the 
 
 ### Unmatched requests
 
-If nothing matches, the client gets a deliberately anonymous 404 — no JSON envelope, no wording, no header or body that identifies PipeRouter, so path scanners learn nothing from it:
+If nothing matches, the client gets a deliberately anonymous 404 — the stock Go `net/http` response, byte-identical to what any vanilla Go server sends, so probing clients cannot tell a PipeRouter apart from the crowd:
 
 ```http
 HTTP/1.1 404 Not Found
 Content-Type: text/plain; charset=utf-8
 
-404
+404 page not found
 ```
 
 The access log and metrics still record these requests as `route_not_found` internally.
@@ -382,8 +382,8 @@ Upstream HTTP responses — including `401`, `404`, `429`, `500` — are relayed
 
 | Condition | Status | Body |
 | --- | --- | --- |
-| No route matched the request path | `404` | plain-text `404` — deliberately carries no fingerprint at all; logged internally as `route_not_found` |
-| Static route received a method other than GET/HEAD | `405` | `{"error":"method_not_allowed"}` (also sets `Allow: GET, HEAD`) |
+| No route matched the request path | `404` | stock Go plain-text `404 page not found` — deliberately anonymous; logged internally as `route_not_found` |
+| Static route received a method other than GET/HEAD | `405` | stock Go plain-text `Method Not Allowed` (also sets `Allow: GET, HEAD`) — deliberately anonymous; logged internally as `method_not_allowed` |
 | DNS failure, connection refused/failed, dial timeout, HTTP-proxy CONNECT failure, SOCKS5 negotiation failure, TLS handshake failure, upstream closed the connection before responding | `502` | `{"error":"upstream_connection_failed"}` |
 | Upstream connected but response headers didn't arrive within `network.response_header_timeout` | `504` | `{"error":"upstream_timeout"}` |
 | WebSocket upgrade toward the upstream failed | `502` | `{"error":"websocket_upgrade_failed"}` |

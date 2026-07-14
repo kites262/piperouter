@@ -127,10 +127,11 @@ func TestRewritePreservesQuery(t *testing.T) {
 	}
 }
 
-// TestUnmatchedRouteAnonymous404: unmatched requests get a bare "404"
-// (text/plain) — never the JSON error envelope or any wording, so path
-// scanners cannot fingerprint PipeRouter. The request is still logged
-// internally as route_not_found.
+// TestUnmatchedRouteAnonymous404: unmatched requests get the stock Go 404
+// (text/plain, "404 page not found") — never the JSON error envelope, so
+// probing clients see exactly what any vanilla net/http server sends and
+// cannot fingerprint PipeRouter. The request is still logged internally as
+// route_not_found.
 func TestUnmatchedRouteAnonymous404(t *testing.T) {
 	up := pathEcho(t, "up")
 	ta := startApp(t, baseConfig(route("api", "/api", up.URL)))
@@ -141,10 +142,10 @@ func TestUnmatchedRouteAnonymous404(t *testing.T) {
 		t.Errorf("status = %d, want 404", resp.StatusCode)
 	}
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
-		t.Errorf("Content-Type = %q, want text/plain (bare 404)", ct)
+		t.Errorf("Content-Type = %q, want text/plain (stock 404)", ct)
 	}
-	if body != "404" {
-		t.Errorf("body = %q, want exactly %q", body, "404")
+	if strings.TrimSpace(body) != "404 page not found" {
+		t.Errorf("body = %q, want the stock Go 404 text", body)
 	}
 }
 

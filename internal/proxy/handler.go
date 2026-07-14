@@ -139,10 +139,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// and the access log record them (bounded labels §22.2).
 		st.handle = h.reg.IncActive("", metrics.StreamNone)
 		st.errClass = errRouteNotFound
-		// Bare 404, not the JSON envelope: unmatched paths are mostly
+		// Stock Go 404, not the JSON envelope: unmatched paths are mostly
 		// scanner probes, and a distinctive body would fingerprint the
 		// gateway. errClass stays internal (access log and metrics only).
-		writePlain404(rw)
+		http.NotFound(rw, r)
 		return
 	}
 	st.routeName = route.Name

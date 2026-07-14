@@ -146,17 +146,17 @@ routes:
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
 	}
-	// A bare "404", not the JSON envelope: the body must not fingerprint
-	// PipeRouter to path scanners.
+	// The stock Go 404, not the JSON envelope: probing clients must see
+	// exactly what any vanilla net/http server sends.
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
-		t.Fatalf("Content-Type = %q, want text/plain (bare 404)", ct)
+		t.Fatalf("Content-Type = %q, want text/plain (stock 404)", ct)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	if got := string(body); got != "404" {
-		t.Fatalf("body = %q, want exactly %q", got, "404")
+	if got := strings.TrimSpace(string(body)); got != "404 page not found" {
+		t.Fatalf("body = %q, want the stock Go 404 text", got)
 	}
 
 	e := lastEntry(t, tp.ring, 1)

@@ -36,16 +36,11 @@ func writeJSONError(w http.ResponseWriter, status int, code string) {
 	io.WriteString(w, `{"error":"`+code+`"}`+"\n")
 }
 
-// writePlain404 answers an unmatched request with a bare "404" body —
-// deliberately anonymous: no JSON envelope and no wording that could
-// fingerprint PipeRouter (or any particular server) to path scanners.
-func writePlain404(w http.ResponseWriter) {
-	h := w.Header()
-	h.Set(contentTypeHeaderKey, "text/plain; charset=utf-8")
-	h.Set(xContentTypeOptions, xContentTypeNosniff)
-	w.WriteHeader(http.StatusNotFound)
-	io.WriteString(w, "404")
-}
+// Anonymous data-plane errors: unmatched 404s and static-route 405s use the
+// stock net/http responses (http.NotFound / http.Error with StatusText), so
+// probing clients see exactly what any vanilla Go server would send —
+// blending into the largest possible crowd beats minimizing bytes. The JSON
+// envelope below is reserved for errors only a real routed client can hit.
 
 // classifyUpstreamError maps a RoundTrip/dial error to a client-visible
 // status and error class per PRD §9.6:

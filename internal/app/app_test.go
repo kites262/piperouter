@@ -116,12 +116,12 @@ func TestStartServesProxyAdminAndWebUI(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", resp.StatusCode)
 		}
-		// A bare "404" — no JSON envelope fingerprinting the gateway.
+		// The stock Go 404 — no JSON envelope fingerprinting the gateway.
 		if strings.Contains(body, "route_not_found") {
 			t.Fatalf("body = %q, must not leak the internal error code", body)
 		}
-		if body != "404" {
-			t.Fatalf("body = %q, want exactly %q", body, "404")
+		if strings.TrimSpace(body) != "404 page not found" {
+			t.Fatalf("body = %q, want the stock Go 404 text", body)
 		}
 	})
 
