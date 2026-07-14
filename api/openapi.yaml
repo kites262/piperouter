@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: PipeRouter Admin API
-  version: 0.1.0
+  version: 0.3.0
   description: |
     REST/JSON management API for PipeRouter, a lightweight HTTP distribution
     proxy. Served under `/api/v1` by the admin server (default
@@ -616,9 +616,12 @@ components:
       required: [version]
       properties:
         version:
-          type: integer
-          description: Configuration schema version. Only `1` is supported.
-          enum: [1]
+          type: string
+          description: >
+            Configuration schema version. Tracks the application release
+            series that introduced the schema; this build reads only "v0.3".
+            There is no automatic migration from older schemas.
+          enum: [v0.3]
         server:
           $ref: '#/components/schemas/ServerConfig'
         runtime:
@@ -739,10 +742,12 @@ components:
     RouteConfig:
       type: object
       description: >
-        One prefix → backend mapping. Type "proxy" (default) reverse-proxies
-        to an http(s) URL; type "static" serves one local file for every
-        matching request.
-      required: [name, prefix, target]
+        One prefix → handler mapping (tagged union). The shared matching
+        fields sit at the top level; everything specific to the handler
+        type lives in the options block, whose schema is selected by type:
+        "proxy" → ProxyRouteOptions, "static" → StaticRouteOptions. Unknown
+        fields inside options are rejected as strictly as top-level ones.
+      required: [name, prefix, options]
       properties:
         name:
           type: string
@@ -757,9 +762,9 @@ components:
         type:
           type: string
           description: >
-            Route mode. "proxy" reverse-proxies to target; "static" serves
-            the single local file at target (absolute path, not a directory).
-            Empty / omitted is normalized to "proxy".
+            Route mode — selects the options schema. "proxy" reverse-proxies
+            to options.target; "static" serves the single local file at
+            options.file. Empty / omitted is normalized to "proxy".
           enum: [proxy, static]
           default: proxy
           example: proxy
@@ -768,43 +773,71 @@ components:
           description: >
             Request path prefix. Must start with "/"; a non-root prefix must
             not end with "/"; must not contain "?", "#", ".." or "//"
-            segments. "/" matches everything.
+            segments. "/" matches everything (unless match is "exact").
           example: /openai
+        match:
+          type: string
+          description: >
+            How prefix is compared to request paths. "prefix" (default) is
+            longest-prefix matching on path-segment boundaries; "exact"
+            matches only a request path equal to prefix — nothing below it.
+          enum: [prefix, exact]
+          default: prefix
+          example: prefix
+        options:
+          description: Type-specific options; schema selected by type.
+          oneOf:
+            - $ref: '#/components/schemas/ProxyRouteOptions'
+            - $ref: '#/components/schemas/StaticRouteOptions'
+
+    ProxyRouteOptions:
+      type: object
+      description: Options block of a proxy route (type "proxy").
+      required: [target]
+      properties:
         target:
           type: string
           description: >
-            For type proxy: absolute http/https URL without userinfo, query
-            or fragment. For type static: filesystem path to a regular file
-            — absolute, or relative to the configuration file's directory
-            (resolved once at load/reload into the route table; YAML is not
-            rewritten). Directories and file:// URLs are not supported.
+            Absolute http/https URL without userinfo, query or fragment.
           example: https://api.openai.com/v1
-        strip_forward_headers:
-          type: boolean
-          nullable: true
+        transport:
+          type: string
           description: >
-            Proxy routes only (ignored for static). Remove proxy metadata
-            request headers (Forwarded, Via, X-Forwarded-For,
-            X-Forwarded-Host, X-Forwarded-Proto) before forwarding, so the
-            target never sees them. Set to false to pass inbound values
-            through unchanged. PipeRouter never adds these headers either
-            way. Defaults to true when omitted.
-          default: true
+            Name of the transport to use. Defaults to the built-in "direct"
+            when omitted.
+          default: direct
+          example: jp-proxy
         strip_prefix:
           type: boolean
           nullable: true
           description: >
-            Proxy routes only (ignored for static). Remove the matched
-            prefix before joining with the target base path. Defaults to
-            true when omitted.
+            Remove the matched prefix before joining with the target base
+            path. Defaults to true when omitted.
           default: true
-        transport:
+        strip_forward_headers:
+          type: boolean
+          nullable: true
+          description: >
+            Remove proxy metadata request headers (Forwarded, Via,
+            X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Proto) before
+            forwarding, so the target never sees them. Set to false to pass
+            inbound values through unchanged. PipeRouter never adds these
+            headers either way. Defaults to true when omitted.
+          default: true
+
+    StaticRouteOptions:
+      type: object
+      description: Options block of a static route (type "static").
+      required: [file]
+      properties:
+        file:
           type: string
           description: >
-            Proxy routes only (ignored for static). Name of the transport
-            to use. Defaults to the built-in "direct" when omitted.
-          default: direct
-          example: jp-proxy
+            Filesystem path to a regular file — absolute, or relative to
+            the configuration file's directory (resolved once at
+            load/reload into the route table; YAML is not rewritten).
+            Directories and file:// URLs are not supported.
+          example: /var/www/index.html
 
     TransportConfig:
       type: object

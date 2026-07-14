@@ -18,8 +18,8 @@ func baseConfig() *Config {
 			{Name: "us-socks", Type: TransportSOCKS5, URL: "socks5://127.0.0.1:1080"},
 		},
 		Routes: []RouteConfig{
-			{Name: "openai", Prefix: "/openai", Target: "https://api.openai.com/v1", Transport: "jp-proxy"},
-			{Name: "github", Prefix: "/github", Target: "https://api.github.com"},
+			{Name: "openai", Prefix: "/openai", Proxy: &ProxyOptions{Target: "https://api.openai.com/v1", Transport: "jp-proxy"}},
+			{Name: "github", Prefix: "/github", Proxy: &ProxyOptions{Target: "https://api.github.com"}},
 		},
 	}
 	c.Normalize()
@@ -43,7 +43,7 @@ func TestValidateAcceptsStaticFileRoute(t *testing.T) {
 		Name:   "landing",
 		Type:   RouteTypeStatic,
 		Prefix: "/",
-		Target: path,
+		Static: &StaticOptions{File: path},
 	})
 	// Two routes cannot share prefix — base already has /openai and /github.
 	// Use a free prefix instead of "/".
@@ -54,15 +54,24 @@ func TestValidateAcceptsStaticFileRoute(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsExactMatch(t *testing.T) {
+	c := baseConfig()
+	c.Routes[0].Match = MatchExact
+	if err := Validate(c, ""); err != nil {
+		t.Fatalf("Validate(match: exact) = %v, want nil", err)
+	}
+}
+
 func TestValidateRejectsStaticDirectory(t *testing.T) {
 	dir := t.TempDir()
 	c := baseConfig()
 	c.Routes[0].Type = RouteTypeStatic
-	c.Routes[0].Target = dir
+	c.Routes[0].Proxy = nil
+	c.Routes[0].Static = &StaticOptions{File: dir}
 	c.Normalize()
 	err := Validate(c, "")
 	if err == nil {
-		t.Fatal("Validate accepted directory as static target")
+		t.Fatal("Validate accepted directory as static file")
 	}
 	if !strings.Contains(err.Error(), "not a directory") && !strings.Contains(err.Error(), "must be a file") {
 		t.Fatalf("error = %q, want directory rejection", err)
@@ -78,13 +87,13 @@ func TestValidateRejectionMatrix(t *testing.T) {
 	}{
 		{
 			name:   "unsupported version",
-			mutate: func(c *Config) { c.Version = 2 },
-			want:   []string{"version 2"},
+			mutate: func(c *Config) { c.Version = "v9.9" },
+			want:   []string{`version "v9.9"`},
 		},
 		{
 			name: "duplicate route name",
 			mutate: func(c *Config) {
-				c.Routes = append(c.Routes, RouteConfig{Name: "openai", Prefix: "/dup", Target: "https://dup.example.com", Transport: DirectName})
+				c.Routes = append(c.Routes, RouteConfig{Name: "openai", Prefix: "/dup", Proxy: &ProxyOptions{Target: "https://dup.example.com", Transport: DirectName}})
 			},
 			want: []string{"duplicate route name"},
 		},
@@ -98,13 +107,13 @@ func TestValidateRejectionMatrix(t *testing.T) {
 		{
 			name: "duplicate prefix",
 			mutate: func(c *Config) {
-				c.Routes = append(c.Routes, RouteConfig{Name: "other", Prefix: "/openai", Target: "https://dup.example.com", Transport: DirectName})
+				c.Routes = append(c.Routes, RouteConfig{Name: "other", Prefix: "/openai", Proxy: &ProxyOptions{Target: "https://dup.example.com", Transport: DirectName}})
 			},
 			want: []string{"duplicate prefix"},
 		},
 		{
 			name:   "route references unknown transport",
-			mutate: func(c *Config) { c.Routes[0].Transport = "no-such" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Transport = "no-such" },
 			want:   []string{"unknown transport", "no-such"},
 		},
 		{
@@ -136,52 +145,52 @@ func TestValidateRejectionMatrix(t *testing.T) {
 		},
 		{
 			name:   "transport name invalid",
-			mutate: func(c *Config) { c.Transports[0].Name = "_bad"; c.Routes[0].Transport = "_bad" },
+			mutate: func(c *Config) { c.Transports[0].Name = "_bad"; c.Routes[0].Proxy.Transport = "_bad" },
 			want:   []string{"name must match"},
 		},
 		{
 			name:   "target relative",
-			mutate: func(c *Config) { c.Routes[0].Target = "api.openai.com/v1" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "api.openai.com/v1" },
 			want:   []string{"absolute"},
 		},
 		{
 			name:   "target empty",
-			mutate: func(c *Config) { c.Routes[0].Target = "" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "" },
 			want:   []string{"target is required"},
 		},
 		{
 			name:   "target bad scheme",
-			mutate: func(c *Config) { c.Routes[0].Target = "ftp://example.com/v1" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "ftp://example.com/v1" },
 			want:   []string{"scheme must be http or https"},
 		},
 		{
 			name:   "target userinfo",
-			mutate: func(c *Config) { c.Routes[0].Target = "https://user:pw@example.com/v1" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "https://user:pw@example.com/v1" },
 			want:   []string{"userinfo"},
 		},
 		{
 			name:   "target query",
-			mutate: func(c *Config) { c.Routes[0].Target = "https://example.com/v1?key=1" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "https://example.com/v1?key=1" },
 			want:   []string{"query"},
 		},
 		{
 			name:   "target force query",
-			mutate: func(c *Config) { c.Routes[0].Target = "https://example.com/v1?" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "https://example.com/v1?" },
 			want:   []string{"query"},
 		},
 		{
 			name:   "target fragment",
-			mutate: func(c *Config) { c.Routes[0].Target = "https://example.com/v1#frag" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "https://example.com/v1#frag" },
 			want:   []string{"fragment"},
 		},
 		{
 			name:   "target empty host",
-			mutate: func(c *Config) { c.Routes[0].Target = "https:///v1" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "https:///v1" },
 			want:   []string{"host must not be empty"},
 		},
 		{
 			name:   "target unparseable",
-			mutate: func(c *Config) { c.Routes[0].Target = "http://[::1" },
+			mutate: func(c *Config) { c.Routes[0].Proxy.Target = "http://[::1" },
 			want:   []string{"not a valid URL"},
 		},
 		{
@@ -190,28 +199,51 @@ func TestValidateRejectionMatrix(t *testing.T) {
 			want:   []string{"type", "not supported"},
 		},
 		{
-			name: "static target relative without baseDir",
+			name:   "route match unsupported",
+			mutate: func(c *Config) { c.Routes[0].Match = "glob" },
+			want:   []string{"match", "not supported"},
+		},
+		{
+			name: "static file relative without baseDir",
 			mutate: func(c *Config) {
 				c.Routes[0].Type = RouteTypeStatic
-				c.Routes[0].Target = "www/index.html"
+				c.Routes[0].Proxy = nil
+				c.Routes[0].Static = &StaticOptions{File: "www/index.html"}
 			},
 			want: []string{"relative"},
 		},
 		{
-			name: "static target is URL",
+			name: "static file is URL",
 			mutate: func(c *Config) {
 				c.Routes[0].Type = RouteTypeStatic
-				c.Routes[0].Target = "file:///var/www/index.html"
+				c.Routes[0].Proxy = nil
+				c.Routes[0].Static = &StaticOptions{File: "file:///var/www/index.html"}
 			},
 			want: []string{"filesystem path", "not a URL"},
 		},
 		{
-			name: "static target directory trailing slash",
+			name: "static file directory trailing slash",
 			mutate: func(c *Config) {
 				c.Routes[0].Type = RouteTypeStatic
-				c.Routes[0].Target = "/var/www/"
+				c.Routes[0].Proxy = nil
+				c.Routes[0].Static = &StaticOptions{File: "/var/www/"}
 			},
 			want: []string{"not a directory"},
+		},
+		{
+			name: "static options on a proxy route",
+			mutate: func(c *Config) {
+				c.Routes[0].Proxy = nil
+				c.Routes[0].Static = &StaticOptions{File: "/var/www/index.html"}
+			},
+			want: []string{"static options on a proxy route"},
+		},
+		{
+			name: "proxy options on a static route",
+			mutate: func(c *Config) {
+				c.Routes[0].Type = RouteTypeStatic
+			},
+			want: []string{"proxy options on a static route"},
 		},
 		{
 			name:   "proxy url userinfo",
@@ -365,7 +397,7 @@ func TestValidatePrefixForms(t *testing.T) {
 			c := &Config{
 				Version: SupportedVersion,
 				Routes: []RouteConfig{
-					{Name: "r1", Prefix: tt.prefix, Target: "https://example.com"},
+					{Name: "r1", Prefix: tt.prefix, Proxy: &ProxyOptions{Target: "https://example.com"}},
 				},
 			}
 			c.Normalize()
@@ -382,9 +414,9 @@ func TestValidatePrefixForms(t *testing.T) {
 
 func TestValidateCollectsAllIssues(t *testing.T) {
 	c := baseConfig()
-	c.Version = 3
+	c.Version = "v9.9"
 	c.Routes[0].Prefix = "bad"
-	c.Routes[1].Target = "ftp://example.com"
+	c.Routes[1].Proxy.Target = "ftp://example.com"
 	c.Runtime.LogLevel = "loud"
 	c.Runtime.RecentLogs = intPtr(-5)
 
@@ -416,7 +448,7 @@ func TestValidateExplicitDirectRoute(t *testing.T) {
 	c := &Config{
 		Version: SupportedVersion,
 		Routes: []RouteConfig{
-			{Name: "r1", Prefix: "/r1", Target: "https://example.com", Transport: DirectName},
+			{Name: "r1", Prefix: "/r1", Proxy: &ProxyOptions{Target: "https://example.com", Transport: DirectName}},
 		},
 	}
 	c.Normalize()

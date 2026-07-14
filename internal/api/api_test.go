@@ -21,7 +21,7 @@ import (
 	"github.com/kites262/piperouter/internal/runtime"
 )
 
-const testConfigYAML = `version: 1
+const testConfigYAML = `version: v0.3
 transports:
   - name: t1
     type: http
@@ -29,11 +29,13 @@ transports:
 routes:
   - name: alpha
     prefix: /alpha
-    target: https://alpha.example.com
+    options:
+      target: https://alpha.example.com
   - name: beta
     prefix: /beta
-    target: https://beta.example.com/v1
-    transport: t1
+    options:
+      target: https://beta.example.com/v1
+      transport: t1
 `
 
 type testEnv struct {
@@ -239,7 +241,7 @@ func TestConfigGetAndPut(t *testing.T) {
 	if envl.Revision != oldRev {
 		t.Fatalf("revision = %q, want %q", envl.Revision, oldRev)
 	}
-	if envl.Config == nil || envl.Config.Version != 1 || len(envl.Config.Routes) != 2 {
+	if envl.Config == nil || envl.Config.Version != config.SupportedVersion || len(envl.Config.Routes) != 2 {
 		t.Fatalf("unexpected config payload: %+v", envl.Config)
 	}
 
@@ -297,7 +299,7 @@ func TestConfigGetAndPut(t *testing.T) {
 func TestConfigValidateEndpoint(t *testing.T) {
 	env := newTestEnv(t)
 
-	valid := map[string]any{"config": map[string]any{"version": 1}}
+	valid := map[string]any{"config": map[string]any{"version": string(config.SupportedVersion)}}
 	resp, body := env.do(t, "POST", "/api/v1/config/validate", valid)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("validate(valid) = %d (%s)", resp.StatusCode, body)
@@ -316,9 +318,9 @@ func TestConfigValidateEndpoint(t *testing.T) {
 
 	// Invalid CONTENT is still a 200 — never a request error.
 	invalid := map[string]any{"config": map[string]any{
-		"version": 2,
+		"version": "v9.9",
 		"routes": []map[string]any{
-			{"name": "x", "prefix": "bad", "target": "not-a-url"},
+			{"name": "x", "prefix": "bad", "options": map[string]any{"target": "not-a-url"}},
 		},
 	}}
 	resp, body = env.do(t, "POST", "/api/v1/config/validate", invalid)
@@ -331,8 +333,8 @@ func TestConfigValidateEndpoint(t *testing.T) {
 	}
 
 	// Validation never persists or applies anything.
-	if got := loadFile(t, env.cfgPath).Version; got != 1 {
-		t.Errorf("file version = %d after validate", got)
+	if got := loadFile(t, env.cfgPath).Version; got != config.SupportedVersion {
+		t.Errorf("file version = %q after validate", got)
 	}
 
 	resp, body = env.do(t, "POST", "/api/v1/config/validate", "###")
@@ -378,7 +380,10 @@ func TestRouteCRUD(t *testing.T) {
 	rev := env.manager.Current().Revision
 	resp, body = env.do(t, "POST", "/api/v1/routes", map[string]any{
 		"revision": rev,
-		"route":    map[string]any{"name": "gamma", "prefix": "/gamma", "target": "https://g.example.com"},
+		"route": map[string]any{
+			"name": "gamma", "prefix": "/gamma",
+			"options": map[string]any{"target": "https://g.example.com"},
+		},
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create = %d (%s)", resp.StatusCode, body)
@@ -391,7 +396,7 @@ func TestRouteCRUD(t *testing.T) {
 	if created.Revision == rev || created.Revision != env.manager.Current().Revision {
 		t.Errorf("create revision = %q (old %q)", created.Revision, rev)
 	}
-	if created.Route.Transport != "direct" || created.Route.Enabled == nil || !*created.Route.Enabled {
+	if created.Route.TransportName() != "direct" || created.Route.Enabled == nil || !*created.Route.Enabled {
 		t.Errorf("created route not normalized: %+v", created.Route)
 	}
 	onDisk := loadFile(t, env.cfgPath)
@@ -401,7 +406,10 @@ func TestRouteCRUD(t *testing.T) {
 
 	// Duplicate name → validation_failed.
 	resp, body = env.do(t, "POST", "/api/v1/routes", map[string]any{
-		"route": map[string]any{"name": "alpha", "prefix": "/dup", "target": "https://d.example.com"},
+		"route": map[string]any{
+			"name": "alpha", "prefix": "/dup",
+			"options": map[string]any{"target": "https://d.example.com"},
+		},
 	})
 	e := assertError(t, resp, body, http.StatusBadRequest, "validation_failed")
 	if len(e.Issues) == 0 {
@@ -411,20 +419,29 @@ func TestRouteCRUD(t *testing.T) {
 	// Stale revision on create → 409.
 	resp, body = env.do(t, "POST", "/api/v1/routes", map[string]any{
 		"revision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-		"route":    map[string]any{"name": "delta", "prefix": "/delta", "target": "https://d.example.com"},
+		"route": map[string]any{
+			"name": "delta", "prefix": "/delta",
+			"options": map[string]any{"target": "https://d.example.com"},
+		},
 	})
 	assertError(t, resp, body, http.StatusConflict, "revision_conflict")
 
 	// PUT: name mismatch → validation_failed.
 	resp, body = env.do(t, "PUT", "/api/v1/routes/gamma", map[string]any{
-		"route": map[string]any{"name": "other", "prefix": "/gamma", "target": "https://g.example.com"},
+		"route": map[string]any{
+			"name": "other", "prefix": "/gamma",
+			"options": map[string]any{"target": "https://g.example.com"},
+		},
 	})
 	assertError(t, resp, body, http.StatusBadRequest, "validation_failed")
 
 	// PUT happy path.
 	resp, body = env.do(t, "PUT", "/api/v1/routes/gamma", map[string]any{
 		"revision": env.manager.Current().Revision,
-		"route":    map[string]any{"name": "gamma", "prefix": "/gamma", "target": "https://g2.example.com"},
+		"route": map[string]any{
+			"name": "gamma", "prefix": "/gamma",
+			"options": map[string]any{"target": "https://g2.example.com"},
+		},
 	})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("update = %d (%s)", resp.StatusCode, body)
@@ -434,17 +451,20 @@ func TestRouteCRUD(t *testing.T) {
 		Route    config.RouteConfig `json:"route"`
 	}
 	mustJSON(t, body, &updated)
-	if updated.Route.Target != "https://g2.example.com" {
-		t.Errorf("updated target = %q", updated.Route.Target)
+	if updated.Route.Proxy == nil || updated.Route.Proxy.Target != "https://g2.example.com" {
+		t.Errorf("updated route = %+v, want target https://g2.example.com", updated.Route)
 	}
 	onDisk = loadFile(t, env.cfgPath)
-	if onDisk.Routes[2].Target != "https://g2.example.com" {
-		t.Errorf("file target = %q", onDisk.Routes[2].Target)
+	if onDisk.Routes[2].Proxy == nil || onDisk.Routes[2].Proxy.Target != "https://g2.example.com" {
+		t.Errorf("file route = %+v, want target https://g2.example.com", onDisk.Routes[2])
 	}
 
 	// PUT unknown → 404.
 	resp, body = env.do(t, "PUT", "/api/v1/routes/ghost", map[string]any{
-		"route": map[string]any{"name": "ghost", "prefix": "/ghost", "target": "https://x.example.com"},
+		"route": map[string]any{
+			"name": "ghost", "prefix": "/ghost",
+			"options": map[string]any{"target": "https://x.example.com"},
+		},
 	})
 	assertError(t, resp, body, http.StatusNotFound, "not_found")
 
@@ -584,7 +604,10 @@ func TestOriginCheck(t *testing.T) {
 	env := newTestEnv(t)
 	newRoute := func(name string) map[string]any {
 		return map[string]any{
-			"route": map[string]any{"name": name, "prefix": "/" + name, "target": "https://o.example.com"},
+			"route": map[string]any{
+				"name": name, "prefix": "/" + name,
+				"options": map[string]any{"target": "https://o.example.com"},
+			},
 		}
 	}
 
@@ -680,7 +703,8 @@ func TestMetricsEndpoints(t *testing.T) {
 	// Configured but disabled → no metric series, still 200 with zeroes.
 	resp, body = env.do(t, "POST", "/api/v1/routes", map[string]any{
 		"route": map[string]any{
-			"name": "off", "prefix": "/off", "target": "https://off.example.com", "enabled": false,
+			"name": "off", "prefix": "/off", "enabled": false,
+			"options": map[string]any{"target": "https://off.example.com"},
 		},
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -830,8 +854,8 @@ func TestDiagnosticsEndpoints(t *testing.T) {
 
 	env := newTestEnv(t)
 	for _, route := range []map[string]any{
-		{"name": "up", "prefix": "/up", "target": upstream.URL},
-		{"name": "down", "prefix": "/down", "target": upstream.URL, "enabled": false},
+		{"name": "up", "prefix": "/up", "options": map[string]any{"target": upstream.URL}},
+		{"name": "down", "prefix": "/down", "enabled": false, "options": map[string]any{"target": upstream.URL}},
 	} {
 		resp, body := env.do(t, "POST", "/api/v1/routes", map[string]any{"route": route})
 		if resp.StatusCode != http.StatusCreated {

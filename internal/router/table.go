@@ -1,7 +1,7 @@
 // Package router implements the PipeRouter route table: longest-prefix
-// path matching on segment boundaries and escaped-path rewrite
-// (PRD §7, §8, §23.1–23.3). Static routes serve a single local file and
-// do not participate in URL rewrite.
+// path matching on segment boundaries (or exact-path matching per route)
+// and escaped-path rewrite (PRD §7, §8, §23.1–23.3). Static routes serve
+// a single local file and do not participate in URL rewrite.
 package router
 
 import (
@@ -22,6 +22,7 @@ type Route struct {
 	Name                string
 	Type                string // config.RouteTypeProxy | config.RouteTypeStatic
 	Prefix              string // validated: "/" or no trailing slash
+	Exact               bool   // match only path == Prefix (config "match: exact")
 	Target              *url.URL
 	File                string // absolute path; static only
 	StripPrefix         bool
@@ -57,21 +58,27 @@ func BuildTable(routes []config.RouteConfig, baseDir string) (*Table, error) {
 			Name:                rc.Name,
 			Type:                rc.EffectiveType(),
 			Prefix:              rc.Prefix,
+			Exact:               rc.MatchesExactly(),
 			StripPrefix:         rc.StripsPrefix(),
 			StripForwardHeaders: rc.StripsForwardHeaders(),
-			TransportName:       rc.Transport,
+			TransportName:       rc.TransportName(),
 		}
 		switch r.Type {
 		case config.RouteTypeStatic:
+			if rc.Static == nil {
+				return nil, fmt.Errorf("route %q: missing static options", rc.Name)
+			}
 			// Resolve once at build time; serveStatic only reads r.File.
-			abs, err := config.ResolveStaticFilePath(rc.Target, baseDir)
+			abs, err := config.ResolveStaticFilePath(rc.Static.File, baseDir)
 			if err != nil {
 				return nil, fmt.Errorf("route %q: %w", rc.Name, err)
 			}
 			r.File = abs
-			r.TransportName = "" // no egress for static
 		default:
-			target, err := url.Parse(rc.Target)
+			if rc.Proxy == nil {
+				return nil, fmt.Errorf("route %q: missing proxy options", rc.Name)
+			}
+			target, err := url.Parse(rc.Proxy.Target)
 			if err != nil {
 				return nil, fmt.Errorf("route %q: invalid target: %w", rc.Name, err)
 			}
@@ -97,10 +104,18 @@ func BuildTable(routes []config.RouteConfig, baseDir string) (*Table, error) {
 // on a path-segment boundary, or nil if none matches (PRD §7.2, §7.3).
 // The input must be r.URL.EscapedPath(); matching never decodes.
 //
-// A route matches iff path == prefix or path starts with prefix+"/".
-// The root prefix "/" matches every path. Declaration order is irrelevant.
+// A prefix route matches iff path == prefix or path starts with prefix+"/";
+// the root prefix "/" matches every path. An exact route (match: exact)
+// matches iff path == prefix — paths below it fall through to the remaining
+// routes. Declaration order is irrelevant.
 func (t *Table) Match(escapedPath string) *Route {
 	for _, r := range t.byLength {
+		if r.Exact {
+			if escapedPath == r.Prefix {
+				return r
+			}
+			continue
+		}
 		if r.Prefix == "/" {
 			return r
 		}

@@ -14,7 +14,7 @@ import (
 	"github.com/kites262/piperouter/internal/metrics"
 )
 
-const validYAML = `version: 1
+const validYAML = `version: v0.3
 transports:
   - name: proxy-a
     type: http
@@ -22,7 +22,8 @@ transports:
 routes:
   - name: api
     prefix: /api
-    target: http://127.0.0.1:9000
+    options:
+      target: http://127.0.0.1:9000
 `
 
 func writeConfigFile(t *testing.T, contents string) string {
@@ -119,7 +120,8 @@ func TestNewManagerSkipsDisabledRoutesInMetrics(t *testing.T) {
 	yaml := validYAML + `  - name: off
     enabled: false
     prefix: /off
-    target: http://127.0.0.1:9001
+    options:
+      target: http://127.0.0.1:9001
 `
 	path := writeConfigFile(t, yaml)
 	reg := metrics.NewRegistry()
@@ -149,7 +151,7 @@ func TestNewManagerNilRegistry(t *testing.T) {
 		t.Fatalf("ReloadFromFile: %v", err)
 	}
 	cfg := m.Current().Config.Clone()
-	cfg.Routes[0].Target = "http://127.0.0.1:9001"
+	cfg.Routes[0].Proxy.Target = "http://127.0.0.1:9001"
 	if _, err := m.Apply(cfg, ""); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -174,17 +176,18 @@ func TestNewManagerErrors(t *testing.T) {
 		},
 		{
 			name:   "unknown field",
-			path:   func(t *testing.T) string { return writeConfigFile(t, "version: 1\nbogus_field: true\n") },
+			path:   func(t *testing.T) string { return writeConfigFile(t, "version: v0.3\nbogus_field: true\n") },
 			logger: testLogger(),
 		},
 		{
 			name: "validation failure",
 			path: func(t *testing.T) string {
-				return writeConfigFile(t, `version: 1
+				return writeConfigFile(t, `version: v0.3
 routes:
   - name: bad
     prefix: no-slash
-    target: http://127.0.0.1:9000
+    options:
+      target: http://127.0.0.1:9000
 `)
 			},
 			logger:         testLogger(),
@@ -221,7 +224,7 @@ func TestApplyHappyPath(t *testing.T) {
 	newCfg.Routes = append(newCfg.Routes, config.RouteConfig{
 		Name:   "extra",
 		Prefix: "/extra",
-		Target: "http://127.0.0.1:9100",
+		Proxy:  &config.ProxyOptions{Target: "http://127.0.0.1:9100"},
 	})
 	// Leave pointers nil on the added route to prove Apply normalizes a
 	// clone, not the caller's config.
@@ -239,7 +242,7 @@ func TestApplyHappyPath(t *testing.T) {
 	if snap.Config == newCfg {
 		t.Error("snapshot config must be a clone, not the caller's config")
 	}
-	if newCfg.Routes[1].Enabled != nil || newCfg.Routes[1].StripPrefix != nil {
+	if newCfg.Routes[1].Enabled != nil || newCfg.Routes[1].Proxy.StripPrefix != nil {
 		t.Error("Apply normalized the caller's config in place")
 	}
 	if got := snap.Table.Len(); got != 2 {
@@ -274,7 +277,7 @@ func TestApplyRevisionMismatch(t *testing.T) {
 	before := readFile(t, path)
 
 	newCfg := old.Config.Clone()
-	newCfg.Routes[0].Target = "http://127.0.0.1:9500"
+	newCfg.Routes[0].Proxy.Target = "http://127.0.0.1:9500"
 	_, err := m.Apply(newCfg, "sha256:deadbeef")
 	if !errors.Is(err, ErrRevisionMismatch) {
 		t.Fatalf("Apply error = %v, want ErrRevisionMismatch", err)
@@ -299,7 +302,7 @@ func TestApplyValidationError(t *testing.T) {
 	newCfg.Routes = append(newCfg.Routes, config.RouteConfig{
 		Name:   "bad",
 		Prefix: "no-slash",
-		Target: "http://127.0.0.1:9100",
+		Proxy:  &config.ProxyOptions{Target: "http://127.0.0.1:9100"},
 	})
 	_, err := m.Apply(newCfg, old.Revision)
 	var ve *config.ValidationError
@@ -325,7 +328,7 @@ func TestApplyEmptyExpectedRevisionSkipsCheck(t *testing.T) {
 	old := m.Current()
 
 	newCfg := old.Config.Clone()
-	newCfg.Routes[0].Target = "http://127.0.0.1:9600"
+	newCfg.Routes[0].Proxy.Target = "http://127.0.0.1:9600"
 	snap, err := m.Apply(newCfg, "")
 	if err != nil {
 		t.Fatalf("Apply with empty expectedRevision: %v", err)
@@ -361,10 +364,10 @@ func TestReloadFromFileExternalEdit(t *testing.T) {
 		t.Errorf("file revision = %q, want %q", got, snap.Revision)
 	}
 	// The old snapshot's Config is untouched.
-	if got := old.Config.Routes[0].Target; got != "http://127.0.0.1:9000" {
+	if got := old.Config.Routes[0].Proxy.Target; got != "http://127.0.0.1:9000" {
 		t.Errorf("old snapshot config mutated: target = %q", got)
 	}
-	if got := snap.Config.Routes[0].Target; got != "http://127.0.0.1:9700" {
+	if got := snap.Config.Routes[0].Proxy.Target; got != "http://127.0.0.1:9700" {
 		t.Errorf("new snapshot target = %q, want edited value", got)
 	}
 	st := m.Status()
@@ -385,11 +388,12 @@ func TestReloadFromFileInvalidThenRecover(t *testing.T) {
 		{name: "unparsable yaml", badContent: "::: definitely not yaml {{{"},
 		{
 			name: "validation failure",
-			badContent: `version: 1
+			badContent: `version: v0.3
 routes:
   - name: bad
     prefix: no-slash
-    target: http://127.0.0.1:9000
+    options:
+      target: http://127.0.0.1:9000
 `,
 			wantValidation: true,
 		},
@@ -458,7 +462,7 @@ func TestReloadFromFileNoOp(t *testing.T) {
 
 	// Watcher echo of our own Apply write: no second swap.
 	newCfg := old.Config.Clone()
-	newCfg.Routes[0].Target = "http://127.0.0.1:9900"
+	newCfg.Routes[0].Proxy.Target = "http://127.0.0.1:9900"
 	snap, err := m.Apply(newCfg, "")
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -487,7 +491,7 @@ func TestOnSwapFires(t *testing.T) {
 
 	// Apply fires with the new snapshot.
 	newCfg := m.Current().Config.Clone()
-	newCfg.Routes[0].Target = "http://127.0.0.1:9910"
+	newCfg.Routes[0].Proxy.Target = "http://127.0.0.1:9910"
 	snap, err := m.Apply(newCfg, "")
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -528,7 +532,7 @@ func TestInFlightSnapshotSurvivesSwap(t *testing.T) {
 	newCfg.Routes = []config.RouteConfig{{
 		Name:   "other",
 		Prefix: "/other",
-		Target: "http://127.0.0.1:9200",
+		Proxy:  &config.ProxyOptions{Target: "http://127.0.0.1:9200"},
 	}}
 	newCfg.Transports = nil
 	if _, err := m.Apply(newCfg, inflight.Revision); err != nil {
@@ -639,7 +643,7 @@ func TestConcurrentApplyReloadCurrent(t *testing.T) {
 				cfg.Routes = append(cfg.Routes, config.RouteConfig{
 					Name:   fmt.Sprintf("r-%d-%d", id, j),
 					Prefix: fmt.Sprintf("/r-%d-%d", id, j),
-					Target: "http://127.0.0.1:9999",
+					Proxy:  &config.ProxyOptions{Target: "http://127.0.0.1:9999"},
 				})
 				if _, err := m.Apply(cfg, ""); err != nil {
 					t.Errorf("Apply(%d,%d): %v", id, j, err)

@@ -14,12 +14,10 @@ const props = defineProps<{
   transportType?: string
 }>()
 
-const isStatic = computed(() => props.route.type === 'static')
-
 const targetURL = computed(() => {
-  if (isStatic.value) return null
+  if (props.route.type === 'static') return null
   try {
-    return new URL(props.route.target)
+    return new URL(props.route.options.target)
   } catch {
     return null
   }
@@ -36,10 +34,24 @@ interface Stage {
 
 const stages = computed<Stage[]>(() => {
   const r = props.route
-  if (isStatic.value) {
+  const clientStage: Stage = {
+    key: 'client',
+    label: 'Client',
+    value: 'HTTP',
+    sub: 'inbound',
+    title: 'Incoming client request',
+  }
+  const prefixStage: Stage = {
+    key: 'prefix',
+    label: 'Prefix',
+    value: r.prefix,
+    sub: r.match === 'exact' ? 'exact match' : 'longest match',
+    title: r.match === 'exact' ? `${r.prefix} (match: exact)` : r.prefix,
+  }
+  if (r.type === 'static') {
     return [
-      { key: 'client', label: 'Client', value: 'HTTP', sub: 'inbound', title: 'Incoming client request' },
-      { key: 'prefix', label: 'Prefix', value: r.prefix, sub: 'longest match', title: r.prefix },
+      clientStage,
+      prefixStage,
       {
         key: 'type',
         label: 'Type',
@@ -50,45 +62,46 @@ const stages = computed<Stage[]>(() => {
       {
         key: 'target',
         label: 'File',
-        value: r.target,
+        value: r.options.file,
         sub: 'GET/HEAD',
-        title: r.target,
+        title: r.options.file,
         accent: true,
       },
     ]
   }
+  const o = r.options
   return [
-    { key: 'client', label: 'Client', value: 'HTTP', sub: 'inbound', title: 'Incoming client request' },
-    { key: 'prefix', label: 'Prefix', value: r.prefix, sub: 'longest match', title: r.prefix },
+    clientStage,
+    prefixStage,
     {
       key: 'rewrite',
       label: 'Rewrite',
-      value: r.strip_prefix ? 'strip' : 'keep',
-      sub: r.strip_prefix ? 'prefix removed' : 'path unchanged',
-      title: r.strip_prefix ? 'strip_prefix: true' : 'strip_prefix: false',
+      value: o.strip_prefix ? 'strip' : 'keep',
+      sub: o.strip_prefix ? 'prefix removed' : 'path unchanged',
+      title: o.strip_prefix ? 'strip_prefix: true' : 'strip_prefix: false',
     },
     {
       key: 'headers',
       label: 'Headers',
-      value: r.strip_forward_headers ? 'strip' : 'keep',
-      sub: r.strip_forward_headers ? 'X-Forwarded-* removed' : 'passed through',
-      title: r.strip_forward_headers
+      value: o.strip_forward_headers ? 'strip' : 'keep',
+      sub: o.strip_forward_headers ? 'X-Forwarded-* removed' : 'passed through',
+      title: o.strip_forward_headers
         ? 'strip_forward_headers: true — Forwarded, Via, X-Forwarded-* removed'
         : 'strip_forward_headers: false — inbound values pass through unchanged',
     },
     {
       key: 'transport',
       label: 'Transport',
-      value: r.transport,
+      value: o.transport,
       sub: props.transportType ?? '',
-      title: r.transport,
+      title: o.transport,
     },
     {
       key: 'target',
       label: 'Target',
-      value: targetURL.value !== null ? targetURL.value.host : r.target,
+      value: targetURL.value !== null ? targetURL.value.host : o.target,
       sub: targetURL.value !== null ? targetURL.value.protocol.replace(':', '') : '',
-      title: r.target,
+      title: o.target,
       accent: true,
     },
   ]

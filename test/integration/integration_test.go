@@ -50,8 +50,8 @@ func TestPrefixMatching(t *testing.T) {
 			if resp.StatusCode != http.StatusNotFound {
 				t.Errorf("GET %s: status = %d, want 404 (no match)", tc.path, resp.StatusCode)
 			}
-			if !strings.Contains(body, `"error":"route_not_found"`) {
-				t.Errorf("GET %s: body = %q, want route_not_found", tc.path, body)
+			if strings.Contains(body, "route_not_found") {
+				t.Errorf("GET %s: body = %q, must not leak the internal error code", tc.path, body)
 			}
 		}
 	}
@@ -95,7 +95,7 @@ func TestRewritePreservesQuery(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	keep := route("keep", "/keep", up.URL)
-	keep.StripPrefix = bp(false)
+	keep.Proxy.StripPrefix = bp(false)
 	ta := startApp(t, baseConfig(
 		route("openai", "/openai", up.URL+"/v1"), // strip_prefix defaults to true
 		keep,
@@ -127,9 +127,11 @@ func TestRewritePreservesQuery(t *testing.T) {
 	}
 }
 
-// TestUnmatchedRouteJSON404 covers PRD §7.4: unmatched requests get a JSON
-// 404 with the fixed route_not_found error code.
-func TestUnmatchedRouteJSON404(t *testing.T) {
+// TestUnmatchedRouteAnonymous404: unmatched requests get a bare "404"
+// (text/plain) — never the JSON error envelope or any wording, so path
+// scanners cannot fingerprint PipeRouter. The request is still logged
+// internally as route_not_found.
+func TestUnmatchedRouteAnonymous404(t *testing.T) {
 	up := pathEcho(t, "up")
 	ta := startApp(t, baseConfig(route("api", "/api", up.URL)))
 	client := newClient(t)
@@ -138,11 +140,11 @@ func TestUnmatchedRouteJSON404(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", resp.StatusCode)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type = %q, want text/plain (bare 404)", ct)
 	}
-	if got := strings.TrimSpace(body); got != `{"error":"route_not_found"}` {
-		t.Errorf("body = %q, want %q", got, `{"error":"route_not_found"}`)
+	if body != "404" {
+		t.Errorf("body = %q, want exactly %q", body, "404")
 	}
 }
 
@@ -247,12 +249,14 @@ func TestRouteCreateViaAdminAPI(t *testing.T) {
 	payload, err := json.Marshal(map[string]any{
 		"revision": env.Revision,
 		"route": map[string]any{
-			"name":         "created",
-			"enabled":      true,
-			"prefix":       "/created",
-			"target":       upB.URL,
-			"strip_prefix": true,
-			"transport":    "direct",
+			"name":    "created",
+			"enabled": true,
+			"prefix":  "/created",
+			"options": map[string]any{
+				"target":       upB.URL,
+				"strip_prefix": true,
+				"transport":    "direct",
+			},
 		},
 	})
 	if err != nil {
@@ -284,7 +288,7 @@ func TestRouteCreateViaAdminAPI(t *testing.T) {
 	if found == nil {
 		t.Fatalf("config file %s does not contain route %q after POST", ta.ConfigPath, "created")
 	}
-	if found.Prefix != "/created" || found.Target != upB.URL {
+	if found.Prefix != "/created" || found.Proxy == nil || found.Proxy.Target != upB.URL {
 		t.Errorf("persisted route = %+v, want prefix /created target %s", *found, upB.URL)
 	}
 

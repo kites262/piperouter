@@ -34,7 +34,7 @@ func writeTestConfig(t *testing.T, target string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "piperouter.yaml")
-	yaml := fmt.Sprintf(`version: 1
+	yaml := fmt.Sprintf(`version: v0.3
 server:
   proxy:
     listen: "127.0.0.1:0"
@@ -47,8 +47,9 @@ runtime:
 routes:
   - name: api
     prefix: /api
-    target: %s
-    strip_prefix: true
+    options:
+      target: %s
+      strip_prefix: true
 `, target)
 	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -110,13 +111,17 @@ func TestStartServesProxyAdminAndWebUI(t *testing.T) {
 		t.Fatalf("AdminAddr = %q, want a bound port", a.AdminAddr())
 	}
 
-	t.Run("unmatched path yields route_not_found", func(t *testing.T) {
+	t.Run("unmatched path yields anonymous 404", func(t *testing.T) {
 		resp, body := get(t, "http://"+a.ProxyAddr()+"/nope")
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", resp.StatusCode)
 		}
-		if !strings.Contains(body, `"error":"route_not_found"`) {
-			t.Fatalf("body = %q, want route_not_found error", body)
+		// A bare "404" — no JSON envelope fingerprinting the gateway.
+		if strings.Contains(body, "route_not_found") {
+			t.Fatalf("body = %q, must not leak the internal error code", body)
+		}
+		if body != "404" {
+			t.Fatalf("body = %q, want exactly %q", body, "404")
 		}
 	})
 
@@ -227,7 +232,7 @@ func TestHotReloadAddsRoute(t *testing.T) {
 	cfg.Routes = append(cfg.Routes, config.RouteConfig{
 		Name:   "extra",
 		Prefix: "/extra",
-		Target: backend.URL,
+		Proxy:  &config.ProxyOptions{Target: backend.URL},
 	})
 	cfg.Normalize()
 	if err := config.WriteAtomic(cfgPath, cfg); err != nil {

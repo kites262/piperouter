@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -126,13 +127,14 @@ func closedAddr(t *testing.T) string {
 	return addr
 }
 
-func TestUnmatchedRouteReturns404JSON(t *testing.T) {
+func TestUnmatchedRouteReturnsPlain404(t *testing.T) {
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: api
     prefix: /api
-    target: http://%s
+    options:
+      target: http://%s
 `, closedAddr(t)))
 	tp := newTestProxy(t, snap)
 
@@ -144,11 +146,17 @@ routes:
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", ct)
+	// A bare "404", not the JSON envelope: the body must not fingerprint
+	// PipeRouter to path scanners.
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("Content-Type = %q, want text/plain (bare 404)", ct)
 	}
-	if code := decodeErrorBody(t, resp.Body); code != "route_not_found" {
-		t.Fatalf("error code = %q, want route_not_found", code)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if got := string(body); got != "404" {
+		t.Fatalf("body = %q, want exactly %q", got, "404")
 	}
 
 	e := lastEntry(t, tp.ring, 1)
@@ -172,10 +180,12 @@ func TestMissingTransportReturns502(t *testing.T) {
 	// config.Validate would reject this; build the snapshot by hand to
 	// prove the invariant-broken path answers 502 instead of panicking.
 	table, err := router.BuildTable([]config.RouteConfig{{
-		Name:      "ghost",
-		Prefix:    "/g",
-		Target:    "http://127.0.0.1:9",
-		Transport: "no-such-transport",
+		Name:   "ghost",
+		Prefix: "/g",
+		Proxy: &config.ProxyOptions{
+			Target:    "http://127.0.0.1:9",
+			Transport: "no-such-transport",
+		},
 	}}, "")
 	if err != nil {
 		t.Fatalf("BuildTable: %v", err)
@@ -203,11 +213,12 @@ func TestMissingTransportReturns502(t *testing.T) {
 
 func TestUpstreamDownReturns502(t *testing.T) {
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: api
     prefix: /api
-    target: http://%s
+    options:
+      target: http://%s
 `, closedAddr(t)))
 	tp := newTestProxy(t, snap)
 
@@ -243,13 +254,14 @@ func TestResponseHeaderTimeoutReturns504(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 network:
   response_header_timeout: 80ms
 routes:
   - name: api
     prefix: /api
-    target: %s
+    options:
+      target: %s
 `, upstream.URL))
 	tp := newTestProxy(t, snap)
 
@@ -279,11 +291,12 @@ func TestClientCancelWritesNothingAndSkipsObserve(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: api
     prefix: /api
-    target: %s
+    options:
+      target: %s
 `, upstream.URL))
 	tp := newTestProxy(t, snap)
 
@@ -345,11 +358,12 @@ func TestPanicRecoveryKeepsServing(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: api
     prefix: /api
-    target: %s
+    options:
+      target: %s
 `, upstream.URL))
 	tp := newTestProxyFromProvider(t, &flakyProvider{snap: snap}, []string{"api"})
 

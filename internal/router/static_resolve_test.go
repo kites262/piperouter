@@ -25,7 +25,7 @@ func TestBuildTableResolvesRelativeStaticOnce(t *testing.T) {
 		Name:   "home",
 		Type:   config.RouteTypeStatic,
 		Prefix: "/",
-		Target: rel,
+		Static: &config.StaticOptions{File: rel},
 	}}, dir)
 	if err != nil {
 		t.Fatal(err)

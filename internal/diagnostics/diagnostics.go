@@ -171,6 +171,12 @@ func TestRoute(ctx context.Context, snap *runtime.Snapshot, t RouteTest) Result 
 	if t.Path != "" && !strings.HasPrefix(t.Path, "/") {
 		return resolveFailure(route.Name, "", route.TransportName, `path must be empty or start with "/"`)
 	}
+	if route.Exact && t.Path != "" {
+		// The data plane would never route prefix+extra to this route, so a
+		// probe of it would be a lie about connectivity.
+		return resolveFailure(route.Name, "", route.TransportName,
+			"route matches its prefix exactly; an appended path never matches")
+	}
 	// The synthetic request path is prefix+path; the root prefix "/" is
 	// trimmed first so it never produces a spurious "//" head.
 	syntheticPath := strings.TrimSuffix(route.Prefix, "/") + t.Path

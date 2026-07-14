@@ -12,17 +12,47 @@ piperouter validate --config piperouter.yaml
 
 ## Parsing rules
 
-- Parsing is **strict**: unknown fields are rejected. A typo like `stript_prefix` fails the load instead of being silently ignored.
-- `version` is required and must be `1`.
+- Parsing is **strict**: unknown fields are rejected — including inside a route's `options` block. A typo like `stript_prefix` fails the load instead of being silently ignored, and a proxy-only option on a `static` route is an error rather than dead weight.
+- `version` is required and must be `v0.3` (see [Schema versions](#schema-versions-and-migrating-from-v1)).
 - Durations are YAML strings in Go duration syntax: `10s`, `1m30s`, `500ms`.
 - Booleans and integers left unset get the documented default. A duration set to `0s` (or left unset) also falls back to its default — timeouts cannot be disabled.
+
+## Schema versions (and migrating from v1)
+
+The configuration schema version tracks the **application release series that introduced it** (`v0.3`, `v0.4`, ...), not every release: a release that doesn't change the schema keeps accepting the previous version string. This binary reads exactly `version: v0.3`.
+
+There is **no automatic migration**. A file written for another schema version is rejected at load with a hint; migrate it by hand and restart. Migrating from the legacy `version: 1` schema is mechanical:
+
+1. `version: 1` → `version: v0.3`.
+2. In every route, move the type-specific fields into an `options:` block. Shared matching fields (`name`, `enabled`, `type`, `prefix`, `match`) stay at the top level:
+   - **proxy** routes: `target`, `transport`, `strip_prefix`, `strip_forward_headers` move into `options:`.
+   - **static** routes: `target: <path>` becomes `options: { file: <path> }` — note the rename to `file`.
+
+```yaml
+# v1 (legacy)                          # v0.3
+- name: api                            - name: api
+  type: proxy                            type: proxy
+  prefix: /v1                            prefix: /v1
+  target: https://api.example.com/v1     options:
+  strip_prefix: true                       target: https://api.example.com/v1
+  transport: jp-proxy                      strip_prefix: true
+                                           transport: jp-proxy
+
+- name: landing                        - name: landing
+  type: static                           type: static
+  prefix: /                              prefix: /
+  target: /var/www/index.html            options:
+                                           file: /var/www/index.html
+```
+
+Everything outside `routes[]` (server, runtime, network, transports) is unchanged from v1 except the `version` value itself.
 
 ## Complete example
 
 Every field, with its default value where one exists:
 
 ```yaml
-version: 1                      # required; only 1 is supported
+version: v0.3                   # required; schema version (see "Schema versions")
 
 server:
   proxy:
@@ -55,22 +85,27 @@ transports:                     # outbound proxy links ("direct" is built in)
     type: socks5
     url: socks5://127.0.0.1:1080
 
-routes:                         # prefix → backend mappings
+routes:                         # prefix → handler mappings
   - name: openai
     enabled: true
-    type: proxy                 # default; reverse-proxy to target
+    type: proxy                 # default; selects the options schema
     prefix: /openai
-    target: https://api.openai.com/v1
-    strip_prefix: true
-    strip_forward_headers: true # remove Forwarded/Via/X-Forwarded-* (default)
-    transport: jp-proxy
+    match: prefix               # prefix (default) | exact
+    options:                    # proxy-specific fields
+      target: https://api.openai.com/v1
+      strip_prefix: true
+      strip_forward_headers: true # remove Forwarded/Via/X-Forwarded-* (default)
+      transport: jp-proxy
   - name: github
     prefix: /github
-    target: https://api.github.com
+    options:
+      target: https://api.github.com
   - name: landing
-    type: static                # serve one local file for every matching path
+    type: static                # serve one local file
     prefix: /
-    target: /var/www/index.html # absolute path to a regular file (not a directory)
+    match: exact                # serve the page at "/" only; other paths 404
+    options:
+      file: /var/www/index.html # absolute path to a regular file (not a directory)
 ```
 
 ## Field reference
@@ -79,7 +114,7 @@ routes:                         # prefix → backend mappings
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `version` | int | yes | — | config schema version; must be `1` |
+| `version` | string | yes | — | config schema version; must be `v0.3` |
 | `server` | object | no | see below | listeners |
 | `runtime` | object | no | see below | logging |
 | `network` | object | no | see below | outbound timeouts |
@@ -147,29 +182,46 @@ Values are Go duration strings. Unset or `0s` means the default.
 
 ### `routes[]`
 
+A route is a **tagged union**: the shared matching fields sit at the top level, and everything specific to the handler type lives in the `options` block, whose schema is selected by `type`. Unknown fields inside `options` are rejected as strictly as top-level ones — a proxy-only option on a `static` route is a load error, not dead weight.
+
+Shared fields (every route):
+
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `name` | string | yes | — | unique; must match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` |
 | `enabled` | bool | no | `true` | disabled routes are kept in the file but never match |
-| `type` | string | no | `"proxy"` | `proxy` (reverse-proxy to an HTTP target) or `static` (serve one local file) |
+| `type` | string | no | `"proxy"` | `proxy` (reverse-proxy) or `static` (serve one local file); selects the `options` schema |
 | `prefix` | string | yes | — | path prefix to match; unique across routes (see rules below) |
-| `target` | string | yes | — | for `proxy`: absolute `http`/`https` URL (no query, fragment or userinfo). for `static`: filesystem path to a **regular file** — absolute, or relative to the **configuration file's directory** (`..` allowed and may leave that directory; directories and `file://` URLs are not supported) |
-| `strip_prefix` | bool | no | `true` | `proxy` only: remove the matched prefix before joining with the target path. ignored for `static` |
-| `strip_forward_headers` | bool | no | `true` | `proxy` only: remove `Forwarded`, `Via` and `X-Forwarded-For/-Host/-Proto` before forwarding; `false` passes inbound values through unchanged. ignored for `static` |
-| `transport` | string | no | `"direct"` | `proxy` only: name of a declared transport, or `direct`. ignored for `static` |
+| `match` | string | no | `"prefix"` | `prefix` (longest-prefix on path-segment boundaries) or `exact` (only a request path **equal** to `prefix` matches — nothing below it) |
+| `options` | object | yes | — | type-specific fields, see below |
 
 #### Route type `proxy` (default)
 
-Matches a path prefix, rewrites onto `target`, and reverse-proxies over `transport`. This is the original PipeRouter behaviour; omitting `type` is equivalent to `type: proxy`.
+Matches a path, rewrites onto `options.target`, and reverse-proxies over `options.transport`. Omitting `type` is equivalent to `type: proxy`.
+
+`options` for `type: proxy`:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `target` | string | yes | — | absolute `http`/`https` URL (no query, fragment or userinfo) |
+| `transport` | string | no | `"direct"` | name of a declared transport, or the built-in `direct` |
+| `strip_prefix` | bool | no | `true` | remove the matched prefix before joining with the target path |
+| `strip_forward_headers` | bool | no | `true` | remove `Forwarded`, `Via` and `X-Forwarded-For/-Host/-Proto` before forwarding; `false` passes inbound values through unchanged |
 
 #### Route type `static`
 
-Every request that matches `prefix` is answered with the **same single file** at `target`. There is no directory listing, no request-path joining onto the file, and no `file://` URL form.
+Every request that matches is answered with the **same single file** at `options.file`. There is no directory listing, no request-path joining onto the file, and no `file://` URL form.
+
+`options` for `type: static`:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `file` | string | yes | — | filesystem path to a **regular file** — absolute, or relative to the **configuration file's directory** (`..` allowed and may leave that directory; directories and `file://` URLs are not supported) |
 
 **Path resolution (config load / hot-reload only, not per request):**
 
 - Absolute path: used as-is after cleaning — `/var/www/index.html`
-- Relative path: resolved against the **directory containing the config file** — with `piperouter.yaml` at `/etc/piperouter/piperouter.yaml`, `target: www/index.html` → `/etc/piperouter/www/index.html`
+- Relative path: resolved against the **directory containing the config file** — with `piperouter.yaml` at `/etc/piperouter/piperouter.yaml`, `file: www/index.html` → `/etc/piperouter/www/index.html`
 - `..` is allowed and may resolve **outside** the config directory (`../files/index.html` is fine). This matches absolute paths, which can already point anywhere the process can read. Whoever edits the config is already trusted.
 - The YAML is **never rewritten** to an absolute path (so the file stays portable). Only the in-memory route table stores the absolute path for serving.
 - Trailing separators and URL schemes are rejected.
@@ -183,30 +235,37 @@ routes:
   - name: api
     type: proxy
     prefix: /v1
-    target: https://api.example.com/v1
-    strip_prefix: true
+    options:
+      target: https://api.example.com/v1
+      strip_prefix: true
 
   - name: landing
     type: static
     prefix: /
-    target: www/index.html    # relative to the config file's directory
-    # target: /var/www/index.html  # or absolute
+    match: exact                # serve the page at "/" only; scanner paths get the plain 404
+    options:
+      file: www/index.html      # relative to the config file's directory
+      # file: /var/www/index.html  # or absolute
 ```
+
+Omit `match` (or set `match: prefix`) to keep the root route as a catch-all that answers every unclaimed path with the file.
 
 ## Validation rules
 
 The loader rejects a configuration (listing **all** problems at once) when any of the following holds:
 
-- `version` is not `1`, or an unknown field is present anywhere;
+- `version` is not `v0.3`, or an unknown field is present anywhere (including inside a route's `options` block);
 - a route name or transport name is duplicated, empty, or doesn't match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`;
 - a transport is named `direct` (reserved);
 - a transport `type` is not `http` or `socks5`;
 - a proxy `url` is missing, unparsable, has the wrong scheme for its type, has no host, or contains userinfo;
 - a route `type` is not `proxy` or `static` (empty is normalized to `proxy`);
+- a route `match` is not `prefix` or `exact` (empty is normalized to `prefix`);
+- a route's `options` block does not match its `type` (e.g. `file` on a proxy route);
 - a `proxy` route references a transport that doesn't exist (`direct` is always known);
 - a route `prefix` is duplicated or violates the prefix rules below;
-- a `proxy` route `target` is missing, not an absolute URL, not `http`/`https`, has no host, or contains userinfo, a query, or a fragment;
-- a `static` route `target` is missing, looks like a URL, has a trailing separator, is relative without a config-file base directory, fails to resolve to an absolute path, or (when the resolved path already exists) is not a regular file;
+- a `proxy` route `options.target` is missing, not an absolute URL, not `http`/`https`, has no host, or contains userinfo, a query, or a fragment;
+- a `static` route `options.file` is missing, looks like a URL, has a trailing separator, is relative without a config-file base directory, fails to resolve to an absolute path, or (when the resolved path already exists) is not a regular file;
 - `tls.enabled: true` but `cert_file` or `key_file` is empty;
 - `runtime.log_level` is not one of `debug`, `info`, `warn`, `error`;
 - `runtime.recent_logs` is negative.
@@ -253,14 +312,32 @@ i.e. matching is **path-segment-boundary aware**:
 
 When several routes match, the **longest prefix wins** — the order of routes in the file never affects the result. With prefixes `/api`, `/api/openai` and `/api/openai/v1` configured, a request to `/api/openai/v1/models` always hits `/api/openai/v1`.
 
-The root prefix `/` matches every request (useful as a catch-all; any longer prefix still wins). Disabled routes are skipped entirely. If nothing matches, the client gets:
+The root prefix `/` matches every request (useful as a catch-all; any longer prefix still wins). Disabled routes are skipped entirely.
+
+### `match: exact`
+
+A route with `match: exact` matches **only** a request path equal to its `prefix` — nothing below it:
+
+| Request path | `prefix: /`, `match: exact` matches? |
+| --- | --- |
+| `/` | yes |
+| `/index.html` | **no** |
+| `/wp-admin/install.php` | **no** |
+
+Paths that miss an exact route fall through to the remaining routes (and to the 404 below when nothing else matches). This turns a root static route from a catch-all into a single page: scanner probes for `/wp-admin/...`, `/.env` and friends no longer receive your file.
+
+### Unmatched requests
+
+If nothing matches, the client gets a deliberately anonymous 404 — no JSON envelope, no wording, no header or body that identifies PipeRouter, so path scanners learn nothing from it:
 
 ```http
 HTTP/1.1 404 Not Found
-Content-Type: application/json
+Content-Type: text/plain; charset=utf-8
 
-{"error":"route_not_found"}
+404
 ```
+
+The access log and metrics still record these requests as `route_not_found` internally.
 
 ## Rewrite semantics
 
@@ -305,7 +382,7 @@ Upstream HTTP responses — including `401`, `404`, `429`, `500` — are relayed
 
 | Condition | Status | Body |
 | --- | --- | --- |
-| No route matched the request path | `404` | `{"error":"route_not_found"}` |
+| No route matched the request path | `404` | plain-text `404` — deliberately carries no fingerprint at all; logged internally as `route_not_found` |
 | Static route received a method other than GET/HEAD | `405` | `{"error":"method_not_allowed"}` (also sets `Allow: GET, HEAD`) |
 | DNS failure, connection refused/failed, dial timeout, HTTP-proxy CONNECT failure, SOCKS5 negotiation failure, TLS handshake failure, upstream closed the connection before responding | `502` | `{"error":"upstream_connection_failed"}` |
 | Upstream connected but response headers didn't arrive within `network.response_header_timeout` | `504` | `{"error":"upstream_timeout"}` |

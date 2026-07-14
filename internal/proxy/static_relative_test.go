@@ -29,12 +29,13 @@ func TestServeStaticRelativeE2E(t *testing.T) {
 	}
 
 	cfg, err := config.Parse([]byte(`
-version: 1
+version: v0.3
 routes:
   - name: landing
     type: static
     prefix: /
-    target: ` + rel + `
+    options:
+      file: ` + rel + `
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -42,8 +43,8 @@ routes:
 	if err := config.Validate(cfg, dir); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Routes[0].Target != rel {
-		t.Fatalf("config target rewritten to %q, want relative %q", cfg.Routes[0].Target, rel)
+	if cfg.Routes[0].Static.File != rel {
+		t.Fatalf("config file rewritten to %q, want relative %q", cfg.Routes[0].Static.File, rel)
 	}
 	table, err := router.BuildTable(cfg.Routes, dir)
 	if err != nil {

@@ -75,11 +75,12 @@ func newTransparencyFixture(t *testing.T) (*recordingUpstream, *testProxy, strin
 	upstream := httptest.NewServer(up.handler())
 	t.Cleanup(upstream.Close)
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: api
     prefix: /api
-    target: %s
+    options:
+      target: %s
 `, upstream.URL))
 	tp := newTestProxy(t, snap)
 	upstreamHost := strings.TrimPrefix(upstream.URL, "http://")
@@ -153,15 +154,17 @@ func TestForwardHeaderStripping(t *testing.T) {
 	upstream := httptest.NewServer(up.handler())
 	t.Cleanup(upstream.Close)
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: strip
     prefix: /strip
-    target: %s
+    options:
+      target: %s
   - name: keep
     prefix: /keep
-    target: %s
-    strip_forward_headers: false
+    options:
+      target: %s
+      strip_forward_headers: false
 `, upstream.URL, upstream.URL))
 	tp := newTestProxy(t, snap)
 
@@ -333,15 +336,17 @@ func TestRewriteEndToEnd(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: openai
     prefix: /openai
-    target: %s/v1
+    options:
+      target: %s/v1
   - name: keep
     prefix: /svc
-    target: %s
-    strip_prefix: false
+    options:
+      target: %s
+      strip_prefix: false
 `, upstream.URL, upstream.URL))
 	tp := newTestProxy(t, snap)
 

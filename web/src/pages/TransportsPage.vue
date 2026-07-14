@@ -4,6 +4,7 @@ import { Cable, FlaskConical, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-vue
 import { computed, reactive, ref } from 'vue'
 
 import { ApiError, deleteTransport, getConfig, listRoutes, listTransports } from '@/api/client'
+import { routeTransport } from '@/api/types'
 import type { RouteConfig, TransportConfig } from '@/api/types'
 import TransportFormDialog from '@/components/transports/TransportFormDialog.vue'
 import TransportTestDialog from '@/components/transports/TransportTestDialog.vue'
@@ -95,7 +96,7 @@ const rows = computed<TransportRow[]>(() => {
       isDirect,
       typeVariant: typeBadgeVariant(transport.type),
       endpoint: transport.url,
-      refs: routeList.filter((r) => r.transport === transport.name).map((r) => r.name),
+      refs: routeList.filter((r) => routeTransport(r) === transport.name).map((r) => r.name),
       test: testRecords.get(transport.name) ?? null,
     }
   })

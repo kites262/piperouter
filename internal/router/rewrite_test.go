@@ -203,11 +203,13 @@ func TestRewrite(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tbl := mustTable(t, config.RouteConfig{
-				Name:        "r",
-				Prefix:      tc.prefix,
-				Target:      tc.target,
-				StripPrefix: tc.strip,
-				Transport:   config.DirectName,
+				Name:   "r",
+				Prefix: tc.prefix,
+				Proxy: &config.ProxyOptions{
+					Target:      tc.target,
+					StripPrefix: tc.strip,
+					Transport:   config.DirectName,
+				},
 			})
 			reqURL, err := url.Parse(tc.reqURL)
 			if err != nil {

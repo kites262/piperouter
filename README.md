@@ -66,7 +66,7 @@ make build          # → dist/piperouter  (web UI embedded)
 Write `piperouter.yaml`:
 
 ```yaml
-version: 1
+version: v0.3
 
 server:
   proxy:
@@ -82,13 +82,15 @@ transports:
 routes:
   - name: openai
     prefix: /openai
-    target: https://api.openai.com/v1
-    strip_prefix: true
-    transport: jp-proxy        # this route goes out through the HTTP proxy
+    options:
+      target: https://api.openai.com/v1
+      strip_prefix: true
+      transport: jp-proxy      # this route goes out through the HTTP proxy
 
   - name: github
     prefix: /github
-    target: https://api.github.com   # transport defaults to built-in "direct"
+    options:
+      target: https://api.github.com   # transport defaults to built-in "direct"
 ```
 
 Run it, then hit it:

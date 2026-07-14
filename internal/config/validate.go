@@ -34,7 +34,7 @@ func Validate(c *Config, baseDir string) error {
 	}
 
 	if c.Version != SupportedVersion {
-		add("unsupported version %d (supported version is %d)", c.Version, SupportedVersion)
+		add("unsupported version %q (supported version is %q)", c.Version, SupportedVersion)
 	}
 
 	if c.Server.Proxy.TLS.Enabled {
@@ -142,19 +142,38 @@ func Validate(c *Config, baseDir string) error {
 		}
 		seenPrefixes[r.Prefix] = true
 
+		switch r.EffectiveMatch() {
+		case MatchPrefix, MatchExact:
+		default:
+			add("%s: match %q is not supported (must be %q or %q)", ref, r.Match, MatchPrefix, MatchExact)
+		}
+
 		switch r.EffectiveType() {
 		case RouteTypeProxy:
-			for _, msg := range targetIssues(r.Target) {
+			if r.Static != nil {
+				add("%s: static options on a proxy route", ref)
+			}
+			if r.Proxy == nil {
+				add("%s: missing options (proxy routes need options.target)", ref)
+				break
+			}
+			for _, msg := range targetIssues(r.Proxy.Target) {
 				add("%s: %s", ref, msg)
 			}
-			if r.Transport != "" && !knownTransports[r.Transport] {
-				add("%s: references unknown transport %q", ref, r.Transport)
+			if r.Proxy.Transport != "" && !knownTransports[r.Proxy.Transport] {
+				add("%s: references unknown transport %q", ref, r.Proxy.Transport)
 			}
 		case RouteTypeStatic:
-			for _, msg := range staticTargetIssues(r.Target, baseDir) {
+			if r.Proxy != nil {
+				add("%s: proxy options on a static route", ref)
+			}
+			if r.Static == nil {
+				add("%s: missing options (static routes need options.file)", ref)
+				break
+			}
+			for _, msg := range staticFileIssues(r.Static.File, baseDir) {
 				add("%s: %s", ref, msg)
 			}
-			// transport / strip_* are ignored for static; no extra checks.
 		default:
 			add("%s: type %q is not supported (must be %q or %q)", ref, r.Type, RouteTypeProxy, RouteTypeStatic)
 		}
@@ -224,16 +243,16 @@ func targetIssues(target string) []string {
 	return issues
 }
 
-// staticTargetIssues checks a static-route target: filesystem path to a
-// single regular file (directories are not supported). Relative paths are
+// staticFileIssues checks a static route's options.file: filesystem path to
+// a single regular file (directories are not supported). Relative paths are
 // resolved against baseDir (config file directory) via ResolveStaticFilePath.
 // When the resolved path already exists it must be a regular file; a missing
 // path is allowed so deploys can place the file after configuration.
 //
 // The resolved absolute path is NOT written back into the config — only
 // checked here and re-resolved once in router.BuildTable into Route.File.
-func staticTargetIssues(target, baseDir string) []string {
-	abs, err := ResolveStaticFilePath(target, baseDir)
+func staticFileIssues(file, baseDir string) []string {
+	abs, err := ResolveStaticFilePath(file, baseDir)
 	if err != nil {
 		return []string{err.Error()}
 	}
@@ -242,14 +261,14 @@ func staticTargetIssues(target, baseDir string) []string {
 	if err != nil {
 		// Missing file is OK at validate time; ServeFile will 404 at runtime.
 		if !os.IsNotExist(err) {
-			issues = append(issues, fmt.Sprintf("static target is not accessible: %v", err))
+			issues = append(issues, fmt.Sprintf("static file is not accessible: %v", err))
 		}
 		return issues
 	}
 	if fi.IsDir() {
-		issues = append(issues, "static target must be a file, not a directory")
+		issues = append(issues, "static file must be a file, not a directory")
 	} else if !fi.Mode().IsRegular() {
-		issues = append(issues, "static target must be a regular file")
+		issues = append(issues, "static file must be a regular file")
 	}
 	return issues
 }

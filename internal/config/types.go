@@ -5,8 +5,11 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -16,8 +19,37 @@ import (
 // It always exists, cannot be declared, overridden or deleted (PRD §5.2).
 const DirectName = "direct"
 
-// SupportedVersion is the only accepted config schema version.
-const SupportedVersion = 1
+// SupportedVersion is the configuration schema version this binary accepts.
+// Schema versions track the application release series that introduced them
+// ("v0.3", "v0.4", ...). There is NO automatic migration: a file written for
+// another schema version is rejected with a hint to migrate by hand
+// (docs/configuration.md describes the mapping).
+const SupportedVersion Version = "v0.3"
+
+// Version is the configuration schema version scalar. It decodes from any
+// YAML/JSON scalar (string or number) so that a legacy "version: 1" file
+// fails the version CHECK with a migration hint instead of dying earlier
+// with an opaque YAML type error.
+type Version string
+
+func (v *Version) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("version must be a scalar like %q", SupportedVersion)
+	}
+	*v = Version(value.Value)
+	return nil
+}
+
+func (v *Version) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*v = Version(s)
+		return nil
+	}
+	// Legacy numeric version (v1 wrote an integer).
+	*v = Version(bytes.TrimSpace(data))
+	return nil
+}
 
 // NamePattern documents the constraint applied to Route and Transport names.
 const NamePattern = `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`
@@ -65,7 +97,7 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 
 // Config is the root configuration object (PRD §6.2).
 type Config struct {
-	Version    int               `yaml:"version" json:"version"`
+	Version    Version           `yaml:"version" json:"version"`
 	Server     ServerConfig      `yaml:"server" json:"server"`
 	Runtime    RuntimeConfig     `yaml:"runtime" json:"runtime"`
 	Network    NetworkConfig     `yaml:"network" json:"network"`
@@ -133,40 +165,219 @@ const (
 	RouteTypeStatic = "static" // serve one local file from target (absolute path)
 )
 
-// RouteConfig declares one prefix→backend mapping (PRD §5.1).
+// Route match modes: how a route's Prefix is compared to request paths.
+const (
+	MatchPrefix = "prefix" // longest-prefix on path-segment boundaries (default)
+	MatchExact  = "exact"  // only a request path equal to Prefix matches
+)
+
+// RouteConfig declares one prefix→handler mapping (PRD §5.1).
 //
-// Type selects the handler:
-//   - "proxy" (default): Target is an absolute http/https URL; traffic is
-//     reverse-proxied via Transport.
-//   - "static": Target is an absolute filesystem path to a single regular
-//     file (not a directory). Every request matching Prefix is served that
-//     file. strip_prefix, strip_forward_headers and transport are ignored.
+// The wire shape (YAML and JSON, schema v0.3) is a tagged union: the shared
+// matching fields sit at the top level and everything specific to the
+// handler type lives in an options block whose schema is selected by type.
+// One routes[] entry looks like:
+//
+//	name: api
+//	type: proxy            # selects the options schema; static uses options.file
+//	prefix: /v1
+//	match: prefix
+//	options:
+//	  target: https://api.example.com/v1
+//	  transport: mihomo
+//
+// In memory, exactly one of Proxy/Static is non-nil for a valid config,
+// matching EffectiveType(). The custom (un)marshalers below map the options
+// block to that struct; unknown fields inside options are rejected as
+// strictly as top-level ones (PRD §6.3).
 type RouteConfig struct {
-	Name    string `yaml:"name" json:"name"`
-	Enabled *bool  `yaml:"enabled" json:"enabled"`
+	Name    string
+	Enabled *bool
 	// Type is "proxy" or "static". Empty means "proxy" and is normalized.
-	Type   string `yaml:"type" json:"type"`
-	Prefix string `yaml:"prefix" json:"prefix"`
-	// Target is an absolute http/https URL for type proxy, or an absolute
-	// local file path for type static.
+	Type   string
+	Prefix string
+	// Match is "prefix" (default: longest-prefix on path-segment boundaries)
+	// or "exact" (only a request path equal to Prefix matches — nothing
+	// below it). Empty is normalized to "prefix".
+	Match string
+
+	// Proxy holds the options block of a proxy route; nil otherwise.
+	Proxy *ProxyOptions
+	// Static holds the options block of a static route; nil otherwise.
+	Static *StaticOptions
+}
+
+// ProxyOptions is the options block of a proxy route: reverse-proxy the
+// matched request to Target over Transport.
+type ProxyOptions struct {
+	// Target is an absolute http/https URL (no userinfo, query or fragment).
 	Target string `yaml:"target" json:"target"`
+	// Transport is the egress link. Default "direct".
+	Transport string `yaml:"transport" json:"transport"`
+	// StripPrefix removes the matched prefix before joining with the target
+	// path. Default true.
+	StripPrefix *bool `yaml:"strip_prefix" json:"strip_prefix"`
 	// StripForwardHeaders removes proxy metadata request headers (Forwarded,
 	// Via, X-Forwarded-For/-Host/-Proto) before forwarding, so a fronting
 	// reverse proxy never leaks client details to the target. Default true;
-	// set false to pass inbound values through unchanged. Ignored for static.
+	// set false to pass inbound values through unchanged.
 	StripForwardHeaders *bool `yaml:"strip_forward_headers" json:"strip_forward_headers"`
-	// StripPrefix removes the matched prefix before joining with the target
-	// path. Default true. Ignored for static.
-	StripPrefix *bool `yaml:"strip_prefix" json:"strip_prefix"`
-	// Transport is the egress link for proxy routes. Default "direct".
-	// Ignored for static.
-	Transport string `yaml:"transport" json:"transport"`
 }
 
-func (r RouteConfig) IsEnabled() bool    { return r.Enabled == nil || *r.Enabled }
-func (r RouteConfig) StripsPrefix() bool { return r.StripPrefix == nil || *r.StripPrefix }
+// StaticOptions is the options block of a static route: answer every
+// matching request with the single local file at File.
+type StaticOptions struct {
+	// File is the filesystem path of a regular file — absolute, or relative
+	// to the configuration file's directory. Not a directory, not a URL.
+	File string `yaml:"file" json:"file"`
+}
+
+// routeConfigWire is the on-the-wire shape of RouteConfig with the options
+// block still raw; the typed decode happens per EffectiveType.
+type routeConfigWire struct {
+	Name    string `yaml:"name" json:"name"`
+	Enabled *bool  `yaml:"enabled" json:"enabled"`
+	Type    string `yaml:"type" json:"type"`
+	Prefix  string `yaml:"prefix" json:"prefix"`
+	Match   string `yaml:"match" json:"match"`
+}
+
+// routeConfigMarshal is the outbound wire shape: options carries whichever
+// union member is set. Field order defines the canonical YAML output.
+type routeConfigMarshal struct {
+	Name    string `yaml:"name" json:"name"`
+	Enabled *bool  `yaml:"enabled" json:"enabled"`
+	Type    string `yaml:"type" json:"type"`
+	Prefix  string `yaml:"prefix" json:"prefix"`
+	Match   string `yaml:"match" json:"match"`
+	Options any    `yaml:"options,omitempty" json:"options,omitempty"`
+}
+
+func (r RouteConfig) wireOut() routeConfigMarshal {
+	out := routeConfigMarshal{
+		Name:    r.Name,
+		Enabled: r.Enabled,
+		Type:    r.Type,
+		Prefix:  r.Prefix,
+		Match:   r.Match,
+	}
+	switch {
+	case r.Proxy != nil:
+		out.Options = r.Proxy
+	case r.Static != nil:
+		out.Options = r.Static
+	}
+	return out
+}
+
+// decodeOptions populates the union member selected by wire.Type from the
+// raw options block via decode (strict; unknown option fields error).
+// An unsupported type leaves both members nil — Validate reports it.
+func (r *RouteConfig) decodeOptions(hasOptions bool, decode func(any) error) error {
+	r.Proxy, r.Static = nil, nil
+	switch r.EffectiveType() {
+	case RouteTypeProxy:
+		opts := &ProxyOptions{}
+		if hasOptions {
+			if err := decode(opts); err != nil {
+				return fmt.Errorf("route %q: invalid proxy options: %w", r.Name, err)
+			}
+		}
+		r.Proxy = opts
+	case RouteTypeStatic:
+		opts := &StaticOptions{}
+		if hasOptions {
+			if err := decode(opts); err != nil {
+				return fmt.Errorf("route %q: invalid static options: %w", r.Name, err)
+			}
+		}
+		r.Static = opts
+	}
+	return nil
+}
+
+func (r *RouteConfig) UnmarshalYAML(value *yaml.Node) error {
+	var wire struct {
+		routeConfigWire `yaml:",inline"`
+		Options         yaml.Node `yaml:"options"`
+	}
+	if err := strictYAMLNodeDecode(value, &wire); err != nil {
+		return err
+	}
+	r.Name = wire.Name
+	r.Enabled = wire.Enabled
+	r.Type = wire.Type
+	r.Prefix = wire.Prefix
+	r.Match = wire.Match
+	hasOptions := !wire.Options.IsZero() && wire.Options.Tag != "!!null"
+	return r.decodeOptions(hasOptions, func(out any) error {
+		return strictYAMLNodeDecode(&wire.Options, out)
+	})
+}
+
+func (r RouteConfig) MarshalYAML() (any, error) { return r.wireOut(), nil }
+
+func (r *RouteConfig) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		routeConfigWire
+		Options json.RawMessage `json:"options"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields() // same strictness as the YAML loader
+	if err := dec.Decode(&wire); err != nil {
+		return err
+	}
+	r.Name = wire.Name
+	r.Enabled = wire.Enabled
+	r.Type = wire.Type
+	r.Prefix = wire.Prefix
+	r.Match = wire.Match
+	hasOptions := len(wire.Options) > 0 && !bytes.Equal(bytes.TrimSpace(wire.Options), []byte("null"))
+	return r.decodeOptions(hasOptions, func(out any) error {
+		d := json.NewDecoder(bytes.NewReader(wire.Options))
+		d.DisallowUnknownFields()
+		return d.Decode(out)
+	})
+}
+
+func (r RouteConfig) MarshalJSON() ([]byte, error) { return json.Marshal(r.wireOut()) }
+
+// strictYAMLNodeDecode decodes node into out rejecting unknown fields, the
+// same strictness Parse applies to the whole document. yaml.Node.Decode has
+// no KnownFields switch, so the node is re-encoded and strictly re-decoded.
+func strictYAMLNodeDecode(node *yaml.Node, out any) error {
+	raw, err := yaml.Marshal(node)
+	if err != nil {
+		return err
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(out); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
+
+func (r RouteConfig) IsEnabled() bool { return r.Enabled == nil || *r.Enabled }
+
+// StripsPrefix reports the effective strip_prefix of a proxy route
+// (default true). Static routes never strip.
+func (r RouteConfig) StripsPrefix() bool {
+	return r.Proxy == nil || r.Proxy.StripPrefix == nil || *r.Proxy.StripPrefix
+}
+
+// StripsForwardHeaders reports the effective strip_forward_headers of a
+// proxy route (default true).
 func (r RouteConfig) StripsForwardHeaders() bool {
-	return r.StripForwardHeaders == nil || *r.StripForwardHeaders
+	return r.Proxy == nil || r.Proxy.StripForwardHeaders == nil || *r.Proxy.StripForwardHeaders
+}
+
+// TransportName returns the proxy route's transport ("" for static routes).
+func (r RouteConfig) TransportName() string {
+	if r.Proxy == nil {
+		return ""
+	}
+	return r.Proxy.Transport
 }
 
 // EffectiveType returns the route type after treating empty as proxy.
@@ -177,8 +388,19 @@ func (r RouteConfig) EffectiveType() string {
 	return r.Type
 }
 
+// EffectiveMatch returns the match mode after treating empty as prefix.
+func (r RouteConfig) EffectiveMatch() string {
+	if r.Match == "" {
+		return MatchPrefix
+	}
+	return r.Match
+}
+
+// MatchesExactly reports whether only a path equal to Prefix matches.
+func (r RouteConfig) MatchesExactly() bool { return r.EffectiveMatch() == MatchExact }
+
 // IsStatic reports whether this route serves a local file.
-func (r RouteConfig) IsStatic() bool { return r.EffectiveType() == RouteTypeStatic }
+func (r RouteConfig) IsStatic() bool        { return r.EffectiveType() == RouteTypeStatic }
 func (a AdminServerConfig) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
 func (w WebConfig) IsEnabled() bool         { return w.Enabled == nil || *w.Enabled }
 
@@ -227,20 +449,39 @@ func (c *Config) Normalize() {
 		c.Network.IdleConnectionTimeout = Duration(90 * time.Second)
 	}
 	for i := range c.Routes {
-		if c.Routes[i].Type == "" {
-			c.Routes[i].Type = RouteTypeProxy
+		rt := &c.Routes[i]
+		if rt.Type == "" {
+			rt.Type = RouteTypeProxy
 		}
-		if c.Routes[i].Enabled == nil {
-			c.Routes[i].Enabled = boolPtr(true)
+		if rt.Match == "" {
+			rt.Match = MatchPrefix
 		}
-		if c.Routes[i].StripPrefix == nil {
-			c.Routes[i].StripPrefix = boolPtr(true)
+		if rt.Enabled == nil {
+			rt.Enabled = boolPtr(true)
 		}
-		if c.Routes[i].StripForwardHeaders == nil {
-			c.Routes[i].StripForwardHeaders = boolPtr(true)
+		// Materialize the matching options block when none is present (a
+		// mismatched block is left alone for Validate to report), then fill
+		// its defaults.
+		switch rt.Type {
+		case RouteTypeProxy:
+			if rt.Proxy == nil && rt.Static == nil {
+				rt.Proxy = &ProxyOptions{}
+			}
+		case RouteTypeStatic:
+			if rt.Static == nil && rt.Proxy == nil {
+				rt.Static = &StaticOptions{}
+			}
 		}
-		if c.Routes[i].Transport == "" {
-			c.Routes[i].Transport = DirectName
+		if p := rt.Proxy; p != nil {
+			if p.StripPrefix == nil {
+				p.StripPrefix = boolPtr(true)
+			}
+			if p.StripForwardHeaders == nil {
+				p.StripForwardHeaders = boolPtr(true)
+			}
+			if p.Transport == "" {
+				p.Transport = DirectName
+			}
 		}
 	}
 }
@@ -267,11 +508,19 @@ func (c *Config) Clone() *Config {
 		if r.Enabled != nil {
 			r.Enabled = boolPtr(*r.Enabled)
 		}
-		if r.StripPrefix != nil {
-			r.StripPrefix = boolPtr(*r.StripPrefix)
+		if r.Proxy != nil {
+			p := *r.Proxy
+			if p.StripPrefix != nil {
+				p.StripPrefix = boolPtr(*p.StripPrefix)
+			}
+			if p.StripForwardHeaders != nil {
+				p.StripForwardHeaders = boolPtr(*p.StripForwardHeaders)
+			}
+			r.Proxy = &p
 		}
-		if r.StripForwardHeaders != nil {
-			r.StripForwardHeaders = boolPtr(*r.StripForwardHeaders)
+		if r.Static != nil {
+			st := *r.Static
+			r.Static = &st
 		}
 		out.Routes[i] = r
 	}

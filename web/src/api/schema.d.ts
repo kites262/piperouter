@@ -362,10 +362,10 @@ export interface components {
         /** @description Root configuration object. The YAML file is the single source of truth. */
         Config: {
             /**
-             * @description Configuration schema version. Only `1` is supported.
-             * @enum {integer}
+             * @description Configuration schema version. Tracks the application release series that introduced the schema; this build reads only "v0.3". There is no automatic migration from older schemas.
+             * @enum {string}
              */
-            version: 1;
+            version: "v0.3";
             server?: components["schemas"]["ServerConfig"];
             runtime?: components["schemas"]["RuntimeConfig"];
             network?: components["schemas"]["NetworkConfig"];
@@ -443,7 +443,7 @@ export interface components {
             /** @description Idle pooled-connection timeout. Defaults to "90s". */
             idle_connection_timeout?: components["schemas"]["Duration"];
         };
-        /** @description One prefix → target mapping. */
+        /** @description One prefix → handler mapping (tagged union). The shared matching fields sit at the top level; everything specific to the handler type lives in the options block, whose schema is selected by type: "proxy" → ProxyRouteOptions, "static" → StaticRouteOptions. Unknown fields inside options are rejected as strictly as top-level ones. */
         RouteConfig: {
             /**
              * @description Unique route name.
@@ -456,31 +456,58 @@ export interface components {
              */
             enabled: boolean | null;
             /**
-             * @description Request path prefix. Must start with "/"; a non-root prefix must not end with "/"; must not contain "?", "#", ".." or "//" segments. "/" matches everything.
+             * @description Route mode — selects the options schema. "proxy" reverse-proxies to options.target; "static" serves the single local file at options.file. Empty / omitted is normalized to "proxy".
+             * @default proxy
+             * @example proxy
+             * @enum {string}
+             */
+            type: "proxy" | "static";
+            /**
+             * @description Request path prefix. Must start with "/"; a non-root prefix must not end with "/"; must not contain "?", "#", ".." or "//" segments. "/" matches everything (unless match is "exact").
              * @example /openai
              */
             prefix: string;
             /**
-             * @description Absolute http/https target URL without userinfo, query or fragment.
+             * @description How prefix is compared to request paths. "prefix" (default) is longest-prefix matching on path-segment boundaries; "exact" matches only a request path equal to prefix — nothing below it.
+             * @default prefix
+             * @example prefix
+             * @enum {string}
+             */
+            match: "prefix" | "exact";
+            /** @description Type-specific options; schema selected by type. */
+            options: components["schemas"]["ProxyRouteOptions"] | components["schemas"]["StaticRouteOptions"];
+        };
+        /** @description Options block of a proxy route (type "proxy"). */
+        ProxyRouteOptions: {
+            /**
+             * @description Absolute http/https URL without userinfo, query or fragment.
              * @example https://api.openai.com/v1
              */
             target: string;
-            /**
-             * @description Remove proxy metadata request headers (Forwarded, Via, X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Proto) before forwarding, so the target never sees them. Set to false to pass inbound values through unchanged. PipeRouter never adds these headers either way. Defaults to true when omitted.
-             * @default true
-             */
-            strip_forward_headers: boolean | null;
-            /**
-             * @description Remove the matched prefix before joining with the target base path. Defaults to true when omitted.
-             * @default true
-             */
-            strip_prefix: boolean | null;
             /**
              * @description Name of the transport to use. Defaults to the built-in "direct" when omitted.
              * @default direct
              * @example jp-proxy
              */
             transport: string;
+            /**
+             * @description Remove the matched prefix before joining with the target base path. Defaults to true when omitted.
+             * @default true
+             */
+            strip_prefix: boolean | null;
+            /**
+             * @description Remove proxy metadata request headers (Forwarded, Via, X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Proto) before forwarding, so the target never sees them. Set to false to pass inbound values through unchanged. PipeRouter never adds these headers either way. Defaults to true when omitted.
+             * @default true
+             */
+            strip_forward_headers: boolean | null;
+        };
+        /** @description Options block of a static route (type "static"). */
+        StaticRouteOptions: {
+            /**
+             * @description Filesystem path to a regular file — absolute, or relative to the configuration file's directory (resolved once at load/reload into the route table; YAML is not rewritten). Directories and file:// URLs are not supported.
+             * @example /var/www/index.html
+             */
+            file: string;
         };
         /** @description An outbound link. Configured transports are of type "http" or "socks5"; type "direct" only appears on the synthetic built-in entry returned by the API and cannot be declared in the configuration. */
         TransportConfig: {

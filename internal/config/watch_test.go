@@ -36,7 +36,7 @@ func waitFor(timeout time.Duration, cond func() bool) bool {
 func TestWatcherAtomicReplaceAndUnrelatedFiles(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "piperouter.yaml")
-	mustWriteFile(t, cfgPath, "version: 1\n")
+	mustWriteFile(t, cfgPath, "version: v0.3\n")
 
 	var count atomic.Int32
 	w, err := NewWatcher(cfgPath, discardLogger(), func() { count.Add(1) })
@@ -59,7 +59,7 @@ func TestWatcherAtomicReplaceAndUnrelatedFiles(t *testing.T) {
 	// Atomic replace: write a temp file next to the config, then rename it
 	// over the config file (the WriteAtomic pattern and editor save pattern).
 	tmp := filepath.Join(dir, "piperouter.yaml.tmp-1")
-	mustWriteFile(t, tmp, "version: 1\nruntime:\n  log_level: debug\n")
+	mustWriteFile(t, tmp, "version: v0.3\nruntime:\n  log_level: debug\n")
 	if err := os.Rename(tmp, cfgPath); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestWatcherAtomicReplaceAndUnrelatedFiles(t *testing.T) {
 func TestWatcherFiresOnDirectWriteAndRecreate(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "piperouter.yaml")
-	mustWriteFile(t, cfgPath, "version: 1\n")
+	mustWriteFile(t, cfgPath, "version: v0.3\n")
 
 	var count atomic.Int32
 	w, err := NewWatcher(cfgPath, discardLogger(), func() { count.Add(1) })
@@ -81,7 +81,7 @@ func TestWatcherFiresOnDirectWriteAndRecreate(t *testing.T) {
 	defer w.Close()
 
 	// In-place write.
-	mustWriteFile(t, cfgPath, "version: 1\nruntime:\n  log_level: warn\n")
+	mustWriteFile(t, cfgPath, "version: v0.3\nruntime:\n  log_level: warn\n")
 	if !waitFor(5*time.Second, func() bool { return count.Load() >= 1 }) {
 		t.Fatal("onChange did not fire after direct write")
 	}
@@ -91,7 +91,7 @@ func TestWatcherFiresOnDirectWriteAndRecreate(t *testing.T) {
 	if err := os.Remove(cfgPath); err != nil {
 		t.Fatal(err)
 	}
-	mustWriteFile(t, cfgPath, "version: 1\nruntime:\n  log_level: error\n")
+	mustWriteFile(t, cfgPath, "version: v0.3\nruntime:\n  log_level: error\n")
 	if !waitFor(5*time.Second, func() bool { return count.Load() > before }) {
 		t.Fatal("onChange did not fire after remove+recreate")
 	}
@@ -108,7 +108,7 @@ func TestWatcherFileNotYetExisting(t *testing.T) {
 	}
 	defer w.Close()
 
-	mustWriteFile(t, cfgPath, "version: 1\n")
+	mustWriteFile(t, cfgPath, "version: v0.3\n")
 	if !waitFor(5*time.Second, func() bool { return count.Load() >= 1 }) {
 		t.Fatal("onChange did not fire when the file was created")
 	}
@@ -117,7 +117,7 @@ func TestWatcherFileNotYetExisting(t *testing.T) {
 func TestWatcherDebounceCoalescesBursts(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "piperouter.yaml")
-	mustWriteFile(t, cfgPath, "version: 1\n")
+	mustWriteFile(t, cfgPath, "version: v0.3\n")
 
 	var count atomic.Int32
 	w, err := NewWatcher(cfgPath, discardLogger(), func() { count.Add(1) })
@@ -129,7 +129,7 @@ func TestWatcherDebounceCoalescesBursts(t *testing.T) {
 	// A rapid burst of writes should produce far fewer callbacks than writes.
 	const writes = 5
 	for i := 0; i < writes; i++ {
-		mustWriteFile(t, cfgPath, "version: 1\n# burst\n")
+		mustWriteFile(t, cfgPath, "version: v0.3\n# burst\n")
 		time.Sleep(20 * time.Millisecond)
 	}
 	if !waitFor(5*time.Second, func() bool { return count.Load() >= 1 }) {
@@ -154,7 +154,7 @@ func TestWatcherErrors(t *testing.T) {
 func TestWatcherCloseIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "piperouter.yaml")
-	mustWriteFile(t, cfgPath, "version: 1\n")
+	mustWriteFile(t, cfgPath, "version: v0.3\n")
 
 	var count atomic.Int32
 	w, err := NewWatcher(cfgPath, discardLogger(), func() { count.Add(1) })
@@ -170,7 +170,7 @@ func TestWatcherCloseIdempotent(t *testing.T) {
 
 	// After Close, changes must not fire.
 	closed := count.Load()
-	mustWriteFile(t, cfgPath, "version: 1\nruntime:\n  log_level: debug\n")
+	mustWriteFile(t, cfgPath, "version: v0.3\nruntime:\n  log_level: debug\n")
 	time.Sleep(3 * debounceInterval)
 	if got := count.Load(); got != closed {
 		t.Errorf("onChange fired after Close: %d -> %d", closed, got)

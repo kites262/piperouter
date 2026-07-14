@@ -19,6 +19,25 @@ import (
 // config has been normalized (all defaults filled in). Parse does NOT run
 // Validate; callers decide when to validate.
 func Parse(data []byte) (*Config, error) {
+	// Version gate FIRST, with a tolerant probe: a legacy v1 file must fail
+	// with the migration hint, not with whatever unknown-field error its old
+	// route shape would produce under the strict decode below.
+	var probe struct {
+		Version Version `yaml:"version"`
+	}
+	if err := yaml.Unmarshal(data, &probe); err == nil && probe.Version != SupportedVersion {
+		switch probe.Version {
+		case "":
+			return nil, fmt.Errorf("missing configuration version (this binary reads version: %s)", SupportedVersion)
+		case "1":
+			// The v1 schema (integer version, flat route fields) is not
+			// migrated automatically — point at the manual mapping.
+			return nil, fmt.Errorf("unsupported configuration version %q (this binary reads %q; v1 files must be migrated by hand, see docs/configuration.md)", probe.Version, SupportedVersion)
+		default:
+			return nil, fmt.Errorf("unsupported configuration version %q (supported version is %q)", probe.Version, SupportedVersion)
+		}
+	}
+
 	c := &Config{}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
@@ -30,7 +49,7 @@ func Parse(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("parse configuration: %w", err)
 	}
 	if c.Version != SupportedVersion {
-		return nil, fmt.Errorf("unsupported configuration version %d (supported version is %d)", c.Version, SupportedVersion)
+		return nil, fmt.Errorf("unsupported configuration version %q (supported version is %q)", c.Version, SupportedVersion)
 	}
 	c.Normalize()
 	return c, nil

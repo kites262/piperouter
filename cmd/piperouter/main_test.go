@@ -19,14 +19,15 @@ func writeFile(t *testing.T, name, content string) string {
 	return path
 }
 
-const validYAML = `version: 1
+const validYAML = `version: v0.3
 routes:
   - name: api
     prefix: /api
-    target: https://api.example.com
+    options:
+      target: https://api.example.com
 `
 
-const invalidYAML = `version: 1
+const invalidYAML = `version: v0.3
 transports:
   - name: bad
     type: http
@@ -34,8 +35,9 @@ transports:
 routes:
   - name: api
     prefix: api
-    target: https://api.example.com
-    transport: nope
+    options:
+      target: https://api.example.com
+      transport: nope
 `
 
 func TestRun(t *testing.T) {
@@ -54,7 +56,7 @@ func TestRun(t *testing.T) {
 			name:       "version subcommand",
 			args:       []string{"version"},
 			wantCode:   0,
-			wantStdout: []string{"piperouter", "0.1.0-dev", "go1."},
+			wantStdout: []string{"piperouter", "0.3.0-dev", "go1."},
 		},
 		{
 			name:       "validate valid config",

@@ -412,7 +412,7 @@ func (s *server) handleTransportDelete(w http.ResponseWriter, r *http.Request) {
 		// set matches the config actually being written.
 		var refs []string
 		for i := range cfg.Routes {
-			if cfg.Routes[i].Transport == name {
+			if cfg.Routes[i].TransportName() == name {
 				refs = append(refs, cfg.Routes[i].Name)
 			}
 		}

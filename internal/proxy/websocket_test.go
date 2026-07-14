@@ -36,11 +36,12 @@ func newWSFixture(t *testing.T, custom websocket.Handler) *testProxy {
 	t.Cleanup(upstream.Close)
 
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: ws
     prefix: /ws
-    target: %s
+    options:
+      target: %s
 `, upstream.URL))
 	return newTestProxy(t, snap)
 }
@@ -199,11 +200,12 @@ func TestWebSocketUpgradeRefusalIsRelayed(t *testing.T) {
 
 func TestWebSocketUpstreamDownReturns502(t *testing.T) {
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: ws
     prefix: /ws
-    target: http://%s
+    options:
+      target: http://%s
 `, closedAddr(t)))
 	tp := newTestProxy(t, snap)
 

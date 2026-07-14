@@ -8,8 +8,8 @@
 # Check a config without starting the server:
 #   piperouter validate --config configs/example.yaml
 
-# Config schema version. Only 1 is supported.
-version: 1
+# Config schema version. Only v0.3 is supported.
+version: v0.3
 
 server:
   proxy:
@@ -72,17 +72,19 @@ routes:
   - name: openai
     enabled: true
     prefix: /openai
-    target: https://api.openai.com/v1
-    strip_prefix: true
-    # Remove Forwarded/Via/X-Forwarded-* before forwarding (default true),
-    # so a fronting reverse proxy never leaks client IPs to the target.
-    strip_forward_headers: true
-    transport: jp-proxy
+    options:
+      target: https://api.openai.com/v1
+      strip_prefix: true
+      # Remove Forwarded/Via/X-Forwarded-* before forwarding (default true),
+      # so a fronting reverse proxy never leaks client IPs to the target.
+      strip_forward_headers: true
+      transport: jp-proxy
 
   # /github/repos/... → https://api.github.com/repos/... via direct egress.
   - name: github
     enabled: true
     prefix: /github
-    target: https://api.github.com
-    strip_prefix: true
-    transport: direct
+    options:
+      target: https://api.github.com
+      strip_prefix: true
+      transport: direct

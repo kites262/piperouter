@@ -77,27 +77,57 @@ export interface TransportConfig {
 /** Route handler mode. */
 export type RouteType = 'proxy' | 'static'
 
-/** One prefix → backend mapping. */
-export interface RouteConfig {
+/** Route prefix comparison mode. */
+export type RouteMatch = 'prefix' | 'exact'
+
+/** Options block of a proxy route (type "proxy"). */
+export interface ProxyRouteOptions {
+  /** Absolute http(s) URL — no userinfo, query or fragment. */
+  target: string
+  transport: string
+  strip_prefix: boolean
+  /** Remove Forwarded/Via/X-Forwarded-* before forwarding (default true). */
+  strip_forward_headers: boolean
+}
+
+/** Options block of a static route (type "static"). */
+export interface StaticRouteOptions {
+  /** Filesystem path to a regular file (absolute, or relative to the config file's directory on the server). */
+  file: string
+}
+
+/** Fields shared by every route: identity + matching. */
+export interface RouteConfigBase {
   name: string
   enabled: boolean
-  /** "proxy" (default reverse-proxy) or "static" (single local file). */
-  type: RouteType
   prefix: string
-  /**
-   * Proxy: absolute http(s) URL. Static: filesystem path to a regular file
-   * (absolute, or relative to the config file's directory on the server).
-   */
-  target: string
-  /** Remove Forwarded/Via/X-Forwarded-* before forwarding (default true). Ignored for static. */
-  strip_forward_headers: boolean
-  strip_prefix: boolean
-  transport: string
+  /** "prefix" (default longest-prefix on segment boundaries) or "exact" (only a path equal to prefix). */
+  match: RouteMatch
+}
+
+/**
+ * One prefix → handler mapping (schema v0.3 tagged union): `type` selects
+ * the shape of `options`. The API always returns the normalized form, so
+ * `type` is never absent.
+ */
+export type RouteConfig =
+  | (RouteConfigBase & { type: 'proxy'; options: ProxyRouteOptions })
+  | (RouteConfigBase & { type: 'static'; options: StaticRouteOptions })
+
+/** Display string for the route's destination: proxy target URL or static file path. */
+export function routeDestination(route: RouteConfig): string {
+  return route.type === 'static' ? route.options.file : route.options.target
+}
+
+/** The route's transport name ("" for static routes, which have no egress). */
+export function routeTransport(route: RouteConfig): string {
+  return route.type === 'static' ? '' : route.options.transport
 }
 
 /** Root configuration object (always returned normalized by the API). */
 export interface Config {
-  version: number
+  /** Schema version — tracks the release series ("v0.3"). */
+  version: string
   server: ServerConfig
   runtime: RuntimeConfig
   network: NetworkConfig

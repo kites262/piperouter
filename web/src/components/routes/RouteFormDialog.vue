@@ -45,6 +45,7 @@ const form = reactive({
   enabled: true,
   type: 'proxy' as 'proxy' | 'static',
   prefix: '',
+  match: 'prefix' as 'prefix' | 'exact',
   target: '',
   stripPrefix: true,
   stripForwardHeaders: true,
@@ -75,10 +76,18 @@ watch(open, (isOpen) => {
   form.enabled = source?.enabled ?? true
   form.type = source?.type === 'static' ? 'static' : 'proxy'
   form.prefix = source?.prefix ?? ''
-  form.target = source?.target ?? ''
-  form.stripPrefix = source?.strip_prefix ?? true
-  form.stripForwardHeaders = source?.strip_forward_headers ?? true
-  form.transport = source?.transport ?? 'direct'
+  form.match = source?.match === 'exact' ? 'exact' : 'prefix'
+  if (source?.type === 'static') {
+    form.target = source.options.file
+    form.stripPrefix = true
+    form.stripForwardHeaders = true
+    form.transport = 'direct'
+  } else {
+    form.target = source?.options.target ?? ''
+    form.stripPrefix = source?.options.strip_prefix ?? true
+    form.stripForwardHeaders = source?.options.strip_forward_headers ?? true
+    form.transport = source?.options.transport ?? 'direct'
+  }
   touched.name = false
   touched.prefix = false
   touched.target = false
@@ -138,7 +147,9 @@ function onPrefixBlur(): void {
   if (trimmed !== form.prefix) form.prefix = trimmed
 }
 
-const preview = computed(() => previewMapping(form.prefix, form.target, form.stripPrefix, form.type))
+const preview = computed(() =>
+  previewMapping(form.prefix, form.target, form.stripPrefix, form.type, form.match),
+)
 
 function onReloadClick(): void {
   conflict.value = false
@@ -157,16 +168,25 @@ async function submit(): Promise<void> {
   form.prefix = normalizePrefix(form.prefix)
   if (hasErrors.value || saving.value) return
 
-  const payload: RouteConfig = {
+  const base = {
     name: form.name.trim(),
     enabled: form.enabled,
-    type: form.type,
     prefix: normalizePrefix(form.prefix),
-    target: form.target.trim(),
-    strip_forward_headers: form.stripForwardHeaders,
-    strip_prefix: form.stripPrefix,
-    transport: form.type === 'static' ? 'direct' : form.transport,
+    match: form.match,
   }
+  const payload: RouteConfig =
+    form.type === 'static'
+      ? { ...base, type: 'static', options: { file: form.target.trim() } }
+      : {
+          ...base,
+          type: 'proxy',
+          options: {
+            target: form.target.trim(),
+            transport: form.transport,
+            strip_prefix: form.stripPrefix,
+            strip_forward_headers: form.stripForwardHeaders,
+          },
+        }
 
   saving.value = true
   try {
@@ -242,22 +262,39 @@ async function submit(): Promise<void> {
         </label>
       </div>
 
-      <!-- Prefix -->
-      <label class="block space-y-1.5" @focusout="onPrefixBlur">
-        <span class="text-xs font-medium text-fg-secondary">Prefix</span>
-        <Input
-          v-model="form.prefix"
-          placeholder="/openai"
-          mono
-          :invalid="visibleErrors.prefix !== null"
-        />
-        <span v-if="visibleErrors.prefix" class="block text-xs text-danger">
-          {{ visibleErrors.prefix }}
-        </span>
-        <span v-else class="block text-xs text-fg-muted">
-          Incoming paths matching this prefix are handled. Longest prefix wins.
-        </span>
-      </label>
+      <!-- Prefix + Match -->
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="block space-y-1.5" @focusout="onPrefixBlur">
+          <span class="text-xs font-medium text-fg-secondary">Prefix</span>
+          <Input
+            v-model="form.prefix"
+            placeholder="/openai"
+            mono
+            :invalid="visibleErrors.prefix !== null"
+          />
+          <span v-if="visibleErrors.prefix" class="block text-xs text-danger">
+            {{ visibleErrors.prefix }}
+          </span>
+          <span v-else class="block text-xs text-fg-muted">
+            {{
+              form.match === 'exact'
+                ? 'Only requests whose path equals this prefix are handled.'
+                : 'Incoming paths matching this prefix are handled. Longest prefix wins.'
+            }}
+          </span>
+        </label>
+
+        <label class="block space-y-1.5">
+          <span class="text-xs font-medium text-fg-secondary">Match</span>
+          <Select v-model="form.match">
+            <option value="prefix">prefix — this path and below</option>
+            <option value="exact">exact — this path only</option>
+          </Select>
+          <span class="block text-xs text-fg-muted">
+            exact keeps everything below the prefix answering 404.
+          </span>
+        </label>
+      </div>
 
       <!-- Target / file -->
       <label class="block space-y-1.5" @focusout="touched.target = true">

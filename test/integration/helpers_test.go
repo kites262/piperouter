@@ -98,12 +98,16 @@ func baseConfig(routes ...config.RouteConfig) *config.Config {
 }
 
 func route(name, prefix, target string) config.RouteConfig {
-	return config.RouteConfig{Name: name, Prefix: prefix, Target: target}
+	return config.RouteConfig{
+		Name:   name,
+		Prefix: prefix,
+		Proxy:  &config.ProxyOptions{Target: target},
+	}
 }
 
 func routeVia(name, prefix, target, transportName string) config.RouteConfig {
 	r := route(name, prefix, target)
-	r.Transport = transportName
+	r.Proxy.Transport = transportName
 	return r
 }
 

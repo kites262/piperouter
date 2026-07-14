@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { ApiError, getLogs, getRoute, getRouteMetrics, listTransports } from '@/api/client'
+import { routeTransport } from '@/api/types'
 import type { AccessLogEntry, RouteConfig, RouteMetrics } from '@/api/types'
 import PipelineViz from '@/components/routes/PipelineViz.vue'
 import RouteTestDialog from '@/components/routes/RouteTestDialog.vue'
@@ -57,7 +58,8 @@ async function loadRoute(): Promise<void> {
 
 /** Best-effort lookup of the transport's type for the pipeline diagram. */
 async function loadTransportType(): Promise<void> {
-  const wanted = routeCfg.value?.transport ?? ''
+  const cfg = routeCfg.value
+  const wanted = cfg === null ? '' : routeTransport(cfg)
   if (wanted === '') return
   try {
     const transports = await listTransports()
@@ -132,30 +134,32 @@ watch(
 const configFields = computed(() => {
   const r = routeCfg.value
   if (r === null) return []
-  const type = r.type === 'static' ? 'static' : 'proxy'
-  if (type === 'static') {
+  if (r.type === 'static') {
     return [
       { label: 'Name', value: r.name },
       { label: 'Type', value: 'static' },
       { label: 'Prefix', value: r.prefix },
-      { label: 'File', value: r.target },
+      { label: 'Match', value: r.match === 'exact' ? 'exact' : 'prefix' },
+      { label: 'File', value: r.options.file },
       { label: 'Enabled', value: r.enabled ? 'true' : 'false' },
     ]
   }
+  const o = r.options
   return [
     { label: 'Name', value: r.name },
     { label: 'Type', value: 'proxy' },
     { label: 'Prefix', value: r.prefix },
-    { label: 'Target', value: r.target },
+    { label: 'Match', value: r.match === 'exact' ? 'exact' : 'prefix' },
+    { label: 'Target', value: o.target },
     {
       label: 'Transport',
       value:
-        transportType.value !== '' && transportType.value !== r.transport
-          ? `${r.transport} (${transportType.value})`
-          : r.transport,
+        transportType.value !== '' && transportType.value !== o.transport
+          ? `${o.transport} (${transportType.value})`
+          : o.transport,
     },
-    { label: 'Strip prefix', value: r.strip_prefix ? 'true' : 'false' },
-    { label: 'Strip forward headers', value: r.strip_forward_headers ? 'true' : 'false' },
+    { label: 'Strip prefix', value: o.strip_prefix ? 'true' : 'false' },
+    { label: 'Strip forward headers', value: o.strip_forward_headers ? 'true' : 'false' },
     { label: 'Enabled', value: r.enabled ? 'true' : 'false' },
   ]
 })

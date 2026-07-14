@@ -118,13 +118,16 @@ export function previewMapping(
   target: string,
   stripPrefix: boolean,
   type: 'proxy' | 'static' = 'proxy',
+  match: 'prefix' | 'exact' = 'prefix',
 ): PreviewMapping | null {
   const prefix = normalizePrefix(prefixInput)
   if (prefixSyntaxError(prefix) !== null) return null
   if (validateTarget(target.trim(), type) !== null) return null
 
-  const example = type === 'static' ? (prefix === '/' ? '/' : prefix) : '/chat/completions'
-  const from = type === 'static' ? example : prefix === '/' ? example : `${prefix}${example}`
+  // Exact routes only ever see their literal prefix, so that IS the example.
+  const literalOnly = type === 'static' || match === 'exact'
+  const example = literalOnly ? (prefix === '/' ? '/' : prefix) : '/chat/completions'
+  const from = literalOnly ? example : prefix === '/' ? example : `${prefix}${example}`
 
   if (type === 'static') {
     return { from, to: `file ${target.trim()}` }

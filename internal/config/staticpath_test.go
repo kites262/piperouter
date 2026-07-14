@@ -114,7 +114,8 @@ func TestValidateAndBuildRelativeStatic(t *testing.T) {
 				Name:   "home",
 				Type:   RouteTypeStatic,
 				Prefix: "/",
-				Target: fileRel, // relative — must resolve against config dir
+				// Relative — must resolve against the config dir.
+				Static: &StaticOptions{File: fileRel},
 			},
 		},
 	}
@@ -124,8 +125,8 @@ func TestValidateAndBuildRelativeStatic(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 	// Config must keep the relative form (no rewrite into absolute).
-	if c.Routes[0].Target != fileRel {
-		t.Fatalf("config target rewritten to %q, want relative %q", c.Routes[0].Target, fileRel)
+	if c.Routes[0].Static.File != fileRel {
+		t.Fatalf("config file rewritten to %q, want relative %q", c.Routes[0].Static.File, fileRel)
 	}
 }
 
@@ -133,7 +134,7 @@ func TestValidateRelativeStaticRejectsWithoutBase(t *testing.T) {
 	c := &Config{
 		Version: SupportedVersion,
 		Routes: []RouteConfig{
-			{Name: "home", Type: RouteTypeStatic, Prefix: "/", Target: "x.html"},
+			{Name: "home", Type: RouteTypeStatic, Prefix: "/", Static: &StaticOptions{File: "x.html"}},
 		},
 	}
 	c.Normalize()

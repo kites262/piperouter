@@ -37,11 +37,12 @@ func TestSSEStreamsIncrementally(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: api
     prefix: /api
-    target: %s
+    options:
+      target: %s
 `, upstream.URL))
 	tp := newTestProxy(t, snap)
 
@@ -156,11 +157,12 @@ func TestRequestBodyStreams(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	snap := buildSnapshot(t, fmt.Sprintf(`
-version: 1
+version: v0.3
 routes:
   - name: api
     prefix: /api
-    target: %s
+    options:
+      target: %s
 `, upstream.URL))
 	tp := newTestProxy(t, snap)
 

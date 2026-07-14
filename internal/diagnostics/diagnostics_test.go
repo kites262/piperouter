@@ -43,7 +43,7 @@ func buildSnapshot(t *testing.T, cfg *config.Config) *runtime.Snapshot {
 
 func route(name, prefix, target string, enabled bool) config.RouteConfig {
 	e := enabled
-	return config.RouteConfig{Name: name, Enabled: &e, Prefix: prefix, Target: target}
+	return config.RouteConfig{Name: name, Enabled: &e, Prefix: prefix, Proxy: &config.ProxyOptions{Target: target}}
 }
 
 func TestTestRoute_Success(t *testing.T) {
@@ -119,6 +119,35 @@ func TestTestRoute_UpstreamStatusStillOK(t *testing.T) {
 	}
 }
 
+// Exact routes probe fine at their literal prefix; an appended path can
+// never match on the data plane, so probing it is a resolve failure.
+func TestTestRoute_ExactRoute(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	exact := route("hook", "/hook", upstream.URL, true)
+	exact.Match = config.MatchExact
+	snap := buildSnapshot(t, &config.Config{Routes: []config.RouteConfig{exact}})
+
+	res := diagnostics.TestRoute(context.Background(), snap, diagnostics.RouteTest{Route: "hook"})
+	if !res.OK {
+		t.Fatalf("probe of exact prefix: OK = false (stage=%q error=%q)", res.ErrorStage, res.Error)
+	}
+
+	res = diagnostics.TestRoute(context.Background(), snap, diagnostics.RouteTest{Route: "hook", Path: "/x"})
+	if res.OK {
+		t.Fatal("probe of exact route with extra path: OK = true, want resolve failure")
+	}
+	if res.ErrorStage != diagnostics.StageResolve {
+		t.Errorf("ErrorStage = %q, want resolve", res.ErrorStage)
+	}
+	if !strings.Contains(res.Error, "exactly") {
+		t.Errorf("Error = %q, want it to mention exact matching", res.Error)
+	}
+}
+
 func TestTestRoute_ResolveFailures(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer upstream.Close()
@@ -173,8 +202,10 @@ func TestTestRequest_MatchAndRewrite(t *testing.T) {
 	trueVal := true
 	snap := buildSnapshot(t, &config.Config{
 		Routes: []config.RouteConfig{
-			{Name: "short", Enabled: &trueVal, Prefix: "/api", Target: upstream.URL + "/short", StripPrefix: &trueVal},
-			{Name: "long", Enabled: &trueVal, Prefix: "/api/v1", Target: upstream.URL + "/v1base", StripPrefix: &trueVal},
+			{Name: "short", Enabled: &trueVal, Prefix: "/api",
+				Proxy: &config.ProxyOptions{Target: upstream.URL + "/short", StripPrefix: &trueVal}},
+			{Name: "long", Enabled: &trueVal, Prefix: "/api/v1",
+				Proxy: &config.ProxyOptions{Target: upstream.URL + "/v1base", StripPrefix: &trueVal}},
 		},
 	})
 

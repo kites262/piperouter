@@ -13,6 +13,7 @@ import {
   listTransports,
   updateRoute,
 } from '@/api/client'
+import { routeDestination, routeTransport } from '@/api/types'
 import type { RouteConfig, RouteMetrics, TransportConfig } from '@/api/types'
 import RouteFormDialog from '@/components/routes/RouteFormDialog.vue'
 import RouteTestDialog from '@/components/routes/RouteTestDialog.vue'
@@ -160,7 +161,7 @@ const rows = computed<RouteRow[]>(() => {
   return (routes.value ?? []).map((route) => {
     const m = metrics.get(route.name) ?? null
     const isStatic = route.type === 'static'
-    const type = isStatic ? 'static' : types.get(route.transport)
+    const type = isStatic ? 'static' : types.get(routeTransport(route))
     const rate = errorRate(m)
     const last = m?.last_request_at ?? null
     return {
@@ -383,22 +384,25 @@ function goDetail(name: string): void {
               />
             </Td>
             <Td>
-              <span class="block truncate font-mono text-xs text-fg">{{ row.route.prefix }}</span>
+              <span class="block truncate font-mono text-xs text-fg">
+                {{ row.route.prefix }}
+                <span v-if="row.route.match === 'exact'" class="text-fg-muted">(exact)</span>
+              </span>
             </Td>
             <Td>
-              <Tooltip :text="row.route.target">
+              <Tooltip :text="routeDestination(row.route)">
                 <span class="block truncate font-mono text-xs text-fg-secondary">
-                  {{ row.route.target }}
+                  {{ routeDestination(row.route) }}
                 </span>
               </Tooltip>
             </Td>
             <Td>
               <Badge v-if="row.route.type === 'static'" variant="success" mono>static</Badge>
               <Tooltip v-else-if="row.transportMissing" text="Transport not found in config">
-                <Badge variant="danger" mono>{{ row.route.transport }}</Badge>
+                <Badge variant="danger" mono>{{ routeTransport(row.route) }}</Badge>
               </Tooltip>
               <Badge v-else :variant="row.transportVariant" mono>
-                {{ row.route.transport }}
+                {{ routeTransport(row.route) }}
               </Badge>
             </Td>
             <Td>
@@ -481,7 +485,7 @@ function goDetail(name: string): void {
       title="Delete route"
       :message="
         deleteTarget
-          ? `Delete route “${deleteTarget.name}” (${deleteTarget.prefix} → ${deleteTarget.target})? This cannot be undone.`
+          ? `Delete route “${deleteTarget.name}” (${deleteTarget.prefix} → ${routeDestination(deleteTarget)})? This cannot be undone.`
           : ''
       "
       confirm-text="Delete"
