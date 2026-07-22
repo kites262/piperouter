@@ -21,7 +21,7 @@ import (
 
 // version is stamped at build time via
 // `-ldflags "-X main.version=..."` (see Makefile).
-var version = "0.3.3-dev"
+var version = "0.3.4-dev"
 
 const defaultConfigPath = "piperouter.yaml"
 

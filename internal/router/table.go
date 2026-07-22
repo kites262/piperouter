@@ -18,12 +18,17 @@ import (
 // For Type == config.RouteTypeProxy, Target is non-nil and TransportName
 // names the egress pool entry. For Type == config.RouteTypeStatic, File is
 // the absolute path of the single file to serve and Target is nil.
+//
+// PrefixSlash and TargetBase are precomputed in BuildTable so the request
+// hot path never concatenates or trims those strings per match/rewrite.
 type Route struct {
 	Name                string
 	Type                string // config.RouteTypeProxy | config.RouteTypeStatic
 	Prefix              string // validated: "/" or no trailing slash
+	PrefixSlash         string // Prefix + "/"; empty for Exact or root "/"
 	Exact               bool   // match only path == Prefix (config "match: exact")
 	Target              *url.URL
+	TargetBase          string // Target.EscapedPath() with trailing "/" trimmed; proxy only
 	File                string // absolute path; static only
 	StripPrefix         bool
 	StripForwardHeaders bool
@@ -63,6 +68,10 @@ func BuildTable(routes []config.RouteConfig, baseDir string) (*Table, error) {
 			StripForwardHeaders: rc.StripsForwardHeaders(),
 			TransportName:       rc.TransportName(),
 		}
+		// PrefixSlash is only used by prefix (non-exact, non-root) Match.
+		if !r.Exact && r.Prefix != "/" {
+			r.PrefixSlash = r.Prefix + "/"
+		}
 		switch r.Type {
 		case config.RouteTypeStatic:
 			if rc.Static == nil {
@@ -83,6 +92,7 @@ func BuildTable(routes []config.RouteConfig, baseDir string) (*Table, error) {
 				return nil, fmt.Errorf("route %q: invalid target: %w", rc.Name, err)
 			}
 			r.Target = target
+			r.TargetBase = strings.TrimSuffix(target.EscapedPath(), "/")
 		}
 		t.byLength = append(t.byLength, r)
 		t.byName = append(t.byName, r)
@@ -119,7 +129,8 @@ func (t *Table) Match(escapedPath string) *Route {
 		if r.Prefix == "/" {
 			return r
 		}
-		if escapedPath == r.Prefix || strings.HasPrefix(escapedPath, r.Prefix+"/") {
+		// PrefixSlash is precomputed (Prefix + "/") — no per-request concat.
+		if escapedPath == r.Prefix || strings.HasPrefix(escapedPath, r.PrefixSlash) {
 			return r
 		}
 	}

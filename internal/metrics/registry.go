@@ -70,6 +70,9 @@ type Registry struct {
 
 	mu     sync.RWMutex
 	routes map[string]*routeMetrics
+	// routeNames is the sorted key set of routes, refreshed in SetRoutes so
+	// Snapshot does not re-sort on every admin poll.
+	routeNames []string
 
 	// history is app-lifetime like the registry itself: it survives config
 	// reloads (SetRoutes never touches it) and resets on process restart.
@@ -100,7 +103,13 @@ func (r *Registry) SetRoutes(names []string) {
 			next[name] = &routeMetrics{}
 		}
 	}
+	sorted := make([]string, 0, len(next))
+	for name := range next {
+		sorted = append(sorted, name)
+	}
+	sort.Strings(sorted)
 	r.routes = next
+	r.routeNames = sorted
 }
 
 // SetTransportCount records the current number of transports (built-in
@@ -173,7 +182,25 @@ func (r *Registry) bumpStream(kind StreamKind, delta int64) {
 // per-route counters update only when route is a configured name — unknown
 // or removed names are dropped silently, never auto-created (§22.2).
 // A request is an error when status >= 500 or the upstream failed.
+//
+// Prefer ActiveHandle.Observe on the data plane: it reuses the *routeMetrics
+// captured at IncActive and avoids a second map lookup under RLock.
 func (r *Registry) Observe(route string, status int, upstreamErr bool, latency time.Duration) {
+	r.observe(r.route(route), status, upstreamErr, latency)
+}
+
+// Observe records one completed request against the series this handle
+// pinned at IncActive time (PRD §13.3). Equivalent to Registry.Observe for
+// the same route name, without another map lookup.
+func (h *ActiveHandle) Observe(status int, upstreamErr bool, latency time.Duration) {
+	if h == nil || h.reg == nil {
+		return
+	}
+	h.reg.observe(h.rm, status, upstreamErr, latency)
+}
+
+// observe is the shared implementation for Observe / ActiveHandle.Observe.
+func (r *Registry) observe(rm *routeMetrics, status int, upstreamErr bool, latency time.Duration) {
 	now := time.Now()
 	ms := float64(latency) / float64(time.Millisecond)
 	isErr := status >= 500 || upstreamErr
@@ -184,7 +211,6 @@ func (r *Registry) Observe(route string, status int, upstreamErr bool, latency t
 	r.latency.observe(ms)
 	r.history.observe(now, isErr)
 
-	rm := r.route(route)
 	if rm == nil {
 		return
 	}
@@ -227,11 +253,7 @@ func (r *Registry) Snapshot() Snapshot {
 	}
 
 	r.mu.RLock()
-	names := make([]string, 0, len(r.routes))
-	for name := range r.routes {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := r.routeNames
 	snap.RouteCount = len(names)
 	snap.Routes = make([]RouteSnapshot, 0, len(names))
 	for _, name := range names {

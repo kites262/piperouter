@@ -8,8 +8,10 @@ package proxy
 import (
 	"context"
 	"errors"
+	"log"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -17,7 +19,9 @@ import (
 
 	"github.com/kites262/piperouter/internal/logging"
 	"github.com/kites262/piperouter/internal/metrics"
+	"github.com/kites262/piperouter/internal/router"
 	"github.com/kites262/piperouter/internal/runtime"
+	"github.com/kites262/piperouter/internal/transport"
 )
 
 // SnapshotProvider yields the current immutable runtime snapshot. Each
@@ -42,7 +46,18 @@ func NewHandler(sp SnapshotProvider, reg *metrics.Registry, ring *logging.Ring, 
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &handler{sp: sp, reg: reg, ring: ring, logger: logger, tunnels: map[uint64]func(){}}
+	h := &handler{
+		sp:      sp,
+		reg:     reg,
+		ring:    ring,
+		logger:  logger,
+		tunnels: map[uint64]func(){},
+	}
+	// Shared across all plain HTTP reverse-proxy requests: avoids per-request
+	// ReverseProxy + log.New allocation. Concurrent ServeHTTP is safe.
+	h.errorLog = log.New(slogWriter{logger}, "", 0)
+	h.reverse = newReverseProxy(h, h.errorLog)
+	return h
 }
 
 type handler struct {
@@ -50,6 +65,11 @@ type handler struct {
 	reg    *metrics.Registry
 	ring   *logging.Ring
 	logger *slog.Logger
+
+	// reverse is the process-lifetime ReverseProxy; reverseCall rides on
+	// request context. errorLog is its ErrorLog (also process-lifetime).
+	reverse  *httputil.ReverseProxy
+	errorLog *log.Logger
 
 	// Active WebSocket tunnels, tracked so shutdown can drain then force
 	// close them (they are hijacked, so net/http.Server cannot). tunnelWG
@@ -109,6 +129,10 @@ func (h *handler) DrainWebSockets(ctx context.Context) {
 // requestState accumulates per-request accounting. It is only touched from
 // the request goroutine (ReverseProxy calls Rewrite/ModifyResponse/
 // ErrorHandler synchronously).
+//
+// For plain reverse-proxy requests, route/entry/rw are also set so the
+// shared ReverseProxy callbacks can recover them from context without a
+// second heap object.
 type requestState struct {
 	routeName     string
 	transportName string
@@ -117,6 +141,11 @@ type requestState struct {
 	errClass      string                // classification code for the access entry
 	handle        *metrics.ActiveHandle // non-nil once the active gauges were incremented
 	skipObserve   bool                  // client canceled: no Observe (§9.6)
+
+	// Populated only for serveReverse; read by shared ReverseProxy hooks.
+	route *router.Route
+	entry *transport.Entry
+	rw    *responseRecorder
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +242,13 @@ func (h *handler) finalize(rw *responseRecorder, r *http.Request, st *requestSta
 	}
 	if !st.skipObserve {
 		upstreamErr := st.errClass == errUpstreamFailed || st.errClass == errUpstreamTimeout
-		h.reg.Observe(st.routeName, rw.status, upstreamErr, duration)
+		// Prefer ActiveHandle.Observe: reuses the *routeMetrics captured at
+		// IncActive and skips a second registry map lookup under RLock.
+		if st.handle != nil {
+			st.handle.Observe(rw.status, upstreamErr, duration)
+		} else {
+			h.reg.Observe(st.routeName, rw.status, upstreamErr, duration)
+		}
 	}
 
 	entry := logging.AccessEntry{
@@ -295,21 +330,63 @@ func captureForwardHeaders(h http.Header) []logging.ForwardHeader {
 // isWebSocketUpgrade reports whether the request asks for a WebSocket
 // upgrade: Connection contains the token "Upgrade" and Upgrade equals
 // "websocket" (both case-insensitive), per RFC 9110 §7.8 / RFC 6455 §4.1.
+//
+// Upgrade is checked first: almost all traffic is not WebSocket, and a
+// missing/empty Upgrade skips the Connection token scan entirely.
 func isWebSocketUpgrade(r *http.Request) bool {
-	return headerValuesContainToken(r.Header["Connection"], "Upgrade") &&
-		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return false
+	}
+	return headerValuesContainToken(r.Header["Connection"], "Upgrade")
 }
 
 // headerValuesContainToken reports whether any of the comma-separated
 // header values contains token, compared case-insensitively (the
-// httpguts.HeaderValuesContainsToken check, implemented locally).
+// httpguts.HeaderValuesContainsToken check, without allocating via Split).
 func headerValuesContainToken(values []string, token string) bool {
 	for _, v := range values {
-		for _, t := range strings.Split(v, ",") {
-			if strings.EqualFold(strings.TrimSpace(t), token) {
-				return true
-			}
+		if headerValueContainsToken(v, token) {
+			return true
 		}
 	}
 	return false
+}
+
+// headerValueContainsToken scans a single header field value for token
+// among comma-separated items, without allocating.
+func headerValueContainsToken(v, token string) bool {
+	for len(v) > 0 {
+		var item string
+		if i := strings.IndexByte(v, ','); i >= 0 {
+			item, v = v[:i], v[i+1:]
+		} else {
+			item, v = v, ""
+		}
+		if equalFoldTrim(item, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// equalFoldTrim is EqualFold(TrimSpace(a), b) without intermediate strings
+// when a has no surrounding space (the common case).
+func equalFoldTrim(a, b string) bool {
+	// Trim left.
+	for len(a) > 0 {
+		c := a[0]
+		if c != ' ' && c != '\t' {
+			break
+		}
+		a = a[1:]
+	}
+	// Trim right.
+	for len(a) > 0 {
+		c := a[len(a)-1]
+		if c != ' ' && c != '\t' {
+			break
+		}
+		a = a[:len(a)-1]
+	}
+	return strings.EqualFold(a, b)
 }

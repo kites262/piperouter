@@ -55,16 +55,38 @@ func (r *Ring) Add(e AccessEntry) {
 // route filters by exact route name when non-empty. statusClass is "" (all),
 // "2xx".."5xx" (by status/100) or "error" (Error != ""); any other value
 // matches nothing.
+//
+// The mutex is held only long enough to copy the live window in newest-first
+// order; route/status filtering and limit run without the lock so concurrent
+// Add on the data plane is not stalled by admin UI polls.
 func (r *Ring) Snapshot(limit int, route, statusClass string) []AccessEntry {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := []AccessEntry{}
 	if r.size == 0 {
-		return out
+		r.mu.Unlock()
+		return []AccessEntry{}
 	}
-	n := len(r.buf)
-	for i := 0; i < r.size; i++ {
-		e := r.buf[(r.next-1-i+2*n)%n]
+	n := r.size
+	bufLen := len(r.buf)
+	// Point-in-time copy under lock (same consistency as filtering under lock).
+	tmp := make([]AccessEntry, n)
+	for i := 0; i < n; i++ {
+		tmp[i] = r.buf[(r.next-1-i+2*bufLen)%bufLen]
+	}
+	r.mu.Unlock()
+
+	if route == "" && statusClass == "" {
+		if limit > 0 && limit < len(tmp) {
+			return tmp[:limit]
+		}
+		return tmp
+	}
+
+	capHint := n
+	if limit > 0 && limit < n {
+		capHint = limit
+	}
+	out := make([]AccessEntry, 0, capHint)
+	for _, e := range tmp {
 		if route != "" && e.Route != route {
 			continue
 		}

@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"sort"
 	"sync/atomic"
 )
 
@@ -23,11 +22,16 @@ type histogram struct {
 }
 
 // observe records one latency sample given in milliseconds.
+// Linear scan is faster than binary search for 15 fixed bounds and the
+// common case (sub-100ms) hits an early bucket.
 func (h *histogram) observe(ms float64) {
-	// Smallest index whose upper bound is >= ms; falls through to the
-	// overflow bucket when ms exceeds the last finite bound.
-	idx := sort.SearchFloat64s(bucketBounds[:], ms)
-	h.buckets[idx].Add(1)
+	for i, b := range bucketBounds {
+		if ms <= b {
+			h.buckets[i].Add(1)
+			return
+		}
+	}
+	h.buckets[numBuckets-1].Add(1) // +Inf overflow
 }
 
 // summary loads the buckets once and derives Count/P50/P95/P99. With zero

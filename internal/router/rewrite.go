@@ -27,7 +27,8 @@ func (r *Route) Rewrite(reqURL *url.URL) *url.URL {
 	if r.IsStatic() || r.Target == nil {
 		panic("router: Rewrite called on static route " + r.Name)
 	}
-	base := strings.TrimSuffix(r.Target.EscapedPath(), "/")
+	// TargetBase is precomputed in BuildTable (trimmed target EscapedPath).
+	base := r.TargetBase
 
 	escapedPath := reqURL.EscapedPath()
 	rest := escapedPath

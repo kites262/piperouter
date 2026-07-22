@@ -110,7 +110,13 @@ func (p *Pool) CloseIdleConnections() {
 // newBaseTransport builds the per-entry *http.Transport with the shared
 // tuning from PRD §11.5 and the transparency rules from PRD §9.1
 // (DisableCompression: never inject Accept-Encoding).
+//
+// MaxIdleConns is raised above the Go default of 100 so multi-host routing
+// does not thrash the global idle pool while MaxIdleConnsPerHost is 32.
+// MaxConnsPerHost stays at 0 (unlimited) — same as before — so concurrency
+// semantics are unchanged.
 func newBaseTransport(dial dialFunc, netCfg config.NetworkConfig) *http.Transport {
+	const perHostIdle = 32
 	return &http.Transport{
 		DialContext:           dial,
 		TLSHandshakeTimeout:   netCfg.TLSHandshakeTimeout.Std(),
@@ -118,6 +124,7 @@ func newBaseTransport(dial dialFunc, netCfg config.NetworkConfig) *http.Transpor
 		IdleConnTimeout:       netCfg.IdleConnectionTimeout.Std(),
 		ForceAttemptHTTP2:     true,
 		DisableCompression:    true,
-		MaxIdleConnsPerHost:   32,
+		MaxIdleConns:          perHostIdle * 16, // headroom for many upstream hosts
+		MaxIdleConnsPerHost:   perHostIdle,
 	}
 }
