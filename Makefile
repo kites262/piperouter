@@ -7,7 +7,7 @@
 # dist/ is fully gitignored. `ensure-embed` drops a throwaway .gitkeep when
 # no real UI is present so //go:embed always has at least one file.
 
-VERSION ?= 0.3.4
+VERSION ?= 0.3.5
 
 GO      ?= go
 LDFLAGS := -s -w -X main.version=$(VERSION)

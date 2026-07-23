@@ -240,10 +240,8 @@ const cards = computed<StatCardModel[]>(() => {
         <Skeleton class="mt-3 h-[160px] w-full" />
         <Skeleton class="mt-2 h-3 w-3/4" />
       </div>
-      <div class="grid items-start gap-6 xl:grid-cols-5">
-        <div class="xl:col-span-3"><RoutesOverviewTable :routes="[]" :prefixes="{}" loading /></div>
-        <div class="xl:col-span-2"><RecentErrorsPanel :entries="[]" loading /></div>
-      </div>
+      <RoutesOverviewTable :routes="[]" :prefixes="{}" loading />
+      <RecentErrorsPanel :entries="[]" loading />
     </template>
 
     <div
@@ -283,14 +281,12 @@ const cards = computed<StatCardModel[]>(() => {
 
       <TrafficHistoryChart class="animate-fade-up stagger-6" :buckets="history?.buckets ?? null" />
 
-      <div class="grid items-start gap-6 xl:grid-cols-5">
-        <div class="animate-fade-up stagger-7 xl:col-span-3">
-          <RoutesOverviewTable :routes="routeMetrics" :prefixes="prefixes" />
-        </div>
-        <div class="animate-fade-up stagger-8 xl:col-span-2">
-          <RecentErrorsPanel :entries="errorEntries" />
-        </div>
-      </div>
+      <RoutesOverviewTable
+        class="animate-fade-up stagger-7"
+        :routes="routeMetrics"
+        :prefixes="prefixes"
+      />
+      <RecentErrorsPanel class="animate-fade-up stagger-8" :entries="errorEntries" />
     </template>
   </section>
 </template>
