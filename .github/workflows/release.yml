@@ -1,6 +1,6 @@
 name: Release
 
-# Pushing a v* tag builds the single binary for every target and publishes a
+# Pushing a v* tag builds linux/amd64 and linux/arm64 binaries and publishes a
 # GitHub Release with the archives + checksums attached.
 on:
   push:
@@ -43,22 +43,17 @@ jobs:
           set -euo pipefail
           ver="${TAG#v}"
           mkdir -p dist build
-          targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
+          targets="linux/amd64 linux/arm64"
           for t in $targets; do
             os="${t%/*}"; arch="${t#*/}"
-            bin="piperouter"; [ "$os" = "windows" ] && bin="piperouter.exe"
             stage="piperouter_${TAG}_${os}_${arch}"
             mkdir -p "build/$stage"
             echo "→ building $os/$arch"
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
               -ldflags "-s -w -X main.version=${ver}" \
-              -o "build/$stage/$bin" ./cmd/piperouter
+              -o "build/$stage/piperouter" ./cmd/piperouter
             cp README.md LICENSE configs/example.yaml "build/$stage/"
-            if [ "$os" = "windows" ]; then
-              (cd build && zip -qr "../dist/${stage}.zip" "$stage")
-            else
-              tar -C build -czf "dist/${stage}.tar.gz" "$stage"
-            fi
+            tar -C build -czf "dist/${stage}.tar.gz" "$stage"
           done
           (cd dist && sha256sum * > SHA256SUMS.txt)
           echo "artifacts:"; ls -la dist
