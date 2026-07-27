@@ -481,6 +481,16 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// handleLogsClear empties the access-log ring buffer. Capacity and the
+// process-lifetime dropped counter are left untouched. Idempotent: clearing
+// an already-empty or disabled ring still returns 204.
+func (s *server) handleLogsClear(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Ring != nil {
+		s.deps.Ring.Clear()
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- diagnostics ----------------------------------------------------------
 
 func (s *server) handleDiagnosticsRequest(w http.ResponseWriter, r *http.Request) {

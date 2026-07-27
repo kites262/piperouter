@@ -1,106 +1,130 @@
-<!-- Logs page (PRD §19.6): recent access-log ring buffer.
-     2s polling with pause/resume, manual refresh, route/status/limit filters.
-     Entries arrive newest-first from the API and are never re-sorted.
-     No bodies, no header values — except captured forward headers. -->
+<!-- Logs page (PRD §19.6): filterable, auto-refreshing access-log ring buffer.
+     Pause freezes the 2s poll so the operator can inspect a row without it
+     scrolling away; Clear empties the in-memory buffer after confirmation. -->
 <script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { AlertTriangle, ScrollText, SearchX } from 'lucide-vue-next'
-import { computed, onMounted, ref, watch } from 'vue'
 
-import { ApiError, getLogs, listRoutes } from '@/api/client'
-import type { LogsQuery, LogsResponse, StatusClass } from '@/api/types'
+import { ApiError, clearLogs, getLogs, listRoutes } from '@/api/client'
+import type { LogsResponse, StatusClass } from '@/api/types'
 import LogsFilterBar from '@/components/logs/LogsFilterBar.vue'
 import LogsTable from '@/components/logs/LogsTable.vue'
 import Button from '@/components/ui/Button.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import { usePolling } from '@/composables/usePolling'
 import { useToast } from '@/composables/useToast'
+
+const POLL_MS = 2000
 
 const toast = useToast()
 
-// --- filters ---------------------------------------------------------------
-const routeFilter = ref('') // '' = all routes
-const statusFilter = ref('') // '' = all status classes
-const limitFilter = ref('100') // 50 | 100 | 500
-
-const routeNames = ref<string[]>([])
-
-// --- data ------------------------------------------------------------------
 const logs = ref<LogsResponse | null>(null)
+const routeNames = ref<string[]>([])
 const loadError = ref<string | null>(null)
+const refreshing = ref(false)
+const isPaused = ref(false)
+
+const routeFilter = ref('')
+const statusFilter = ref('')
+const limitFilter = ref('100')
+
+const clearOpen = ref(false)
+const clearing = ref(false)
+
+let timer: ReturnType<typeof setInterval> | null = null
 
 const entries = computed(() => logs.value?.entries ?? [])
 const isInitialLoading = computed(() => logs.value === null && loadError.value === null)
-const hasActiveFilters = computed(() => routeFilter.value !== '' || statusFilter.value !== '')
+const hasActiveFilters = computed(
+  () => routeFilter.value !== '' || statusFilter.value !== '' || limitFilter.value !== '100',
+)
 
-// Discard out-of-order responses (filter change racing a poll tick).
-let requestSeq = 0
-
-async function fetchLogs(): Promise<void> {
-  const seq = ++requestSeq
-  const query: LogsQuery = { limit: Number(limitFilter.value) }
-  if (routeFilter.value !== '') query.route = routeFilter.value
-  if (statusFilter.value !== '') query.status_class = statusFilter.value as StatusClass
-
+async function fetchLogs(opts: { silent?: boolean } = {}): Promise<void> {
+  if (!opts.silent) refreshing.value = true
   try {
-    const res = await getLogs(query)
-    if (seq !== requestSeq) return
-    logs.value = res
+    const limit = Number.parseInt(limitFilter.value, 10)
+    logs.value = await getLogs({
+      limit: Number.isFinite(limit) ? limit : 100,
+      route: routeFilter.value || undefined,
+      status_class: (statusFilter.value || undefined) as StatusClass | undefined,
+    })
     loadError.value = null
   } catch (err) {
-    if (seq !== requestSeq) return
-    const message =
-      err instanceof ApiError ? (err.detail !== '' ? err.detail : err.code) : String(err)
-    // Toast only on the ok → failed transition; polling every 2s must not spam.
-    if (loadError.value === null) {
-      toast.error('Failed to load logs', { message })
-    }
-    loadError.value = message
-  }
-}
-
-// --- polling (2s) ------------------------------------------------------------
-const { pause, resume, isPaused } = usePolling(fetchLogs, { interval: 2000 })
-
-function togglePause(): void {
-  if (isPaused.value) {
-    resume()
-  } else {
-    pause()
-  }
-}
-
-// Filter changes refetch immediately, even while paused.
-watch([routeFilter, statusFilter, limitFilter], () => {
-  void fetchLogs()
-})
-
-// --- manual refresh ----------------------------------------------------------
-const refreshing = ref(false)
-
-async function onManualRefresh(): Promise<void> {
-  refreshing.value = true
-  try {
-    await fetchLogs()
+    const msg = err instanceof ApiError ? err.message : 'Failed to load logs'
+    loadError.value = msg
+    // Keep the previous table on poll failures; only toast on manual refresh.
+    if (!opts.silent) toast.error(msg)
   } finally {
     refreshing.value = false
   }
 }
 
+function startPolling(): void {
+  stopPolling()
+  if (isPaused.value) return
+  timer = setInterval(() => {
+    void fetchLogs({ silent: true })
+  }, POLL_MS)
+}
+
+function stopPolling(): void {
+  if (timer !== null) {
+    clearInterval(timer)
+    timer = null
+  }
+}
+
+function togglePause(): void {
+  isPaused.value = !isPaused.value
+  if (isPaused.value) stopPolling()
+  else startPolling()
+}
+
+async function onManualRefresh(): Promise<void> {
+  await fetchLogs()
+}
+
 function clearFilters(): void {
   routeFilter.value = ''
   statusFilter.value = ''
+  limitFilter.value = '100'
 }
 
-// --- route names for the filter (one-shot, non-fatal on failure) -------------
+function openClearDialog(): void {
+  clearOpen.value = true
+}
+
+async function confirmClearLogs(): Promise<void> {
+  clearing.value = true
+  try {
+    await clearLogs()
+    clearOpen.value = false
+    toast.success('Access log buffer cleared')
+    await fetchLogs({ silent: true })
+  } catch (err) {
+    toast.error(err instanceof ApiError ? err.message : 'Failed to clear logs')
+  } finally {
+    clearing.value = false
+  }
+}
+
+// Filters change → immediate reload (even while paused; the operator asked).
+watch([routeFilter, statusFilter, limitFilter], () => {
+  void fetchLogs({ silent: true })
+})
+
 onMounted(async () => {
   try {
-    routeNames.value = (await listRoutes()).map((r) => r.name)
-  } catch (err) {
-    const message =
-      err instanceof ApiError ? (err.detail !== '' ? err.detail : err.code) : String(err)
-    toast.warning('Route filter unavailable', { message })
+    const routes = await listRoutes()
+    routeNames.value = routes.map((r) => r.name)
+  } catch {
+    // Route list is only for the filter dropdown; ignore failures.
   }
+  await fetchLogs()
+  startPolling()
 })
+
+onUnmounted(stopPolling)
 </script>
 
 <template>
@@ -121,8 +145,10 @@ onMounted(async () => {
         :routes="routeNames"
         :paused="isPaused"
         :refreshing="refreshing"
+        :clearing="clearing"
         @refresh="onManualRefresh"
         @toggle-pause="togglePause"
+        @clear="openClearDialog"
       />
     </div>
 
@@ -191,5 +217,15 @@ onMounted(async () => {
         {{ logs.dropped }}
       </p>
     </template>
+
+    <ConfirmDialog
+      v-model:open="clearOpen"
+      title="Clear access logs"
+      message="Discard every entry in the in-memory access-log ring buffer? Capacity and the dropped counter are kept. This cannot be undone."
+      confirm-text="Clear logs"
+      danger
+      :loading="clearing"
+      @confirm="confirmClearLogs"
+    />
   </section>
 </template>

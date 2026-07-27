@@ -122,7 +122,7 @@ remembered, first visit follows your OS).
 | **Routes** | List, create, edit, enable/disable, delete and test routes. The editor validates live and previews the final URL mapping before you save. |
 | **Route detail** | The pipeline (prefix → rewrite → transport → target) plus per-route counts, error rate, P50/P95/P99 latency and recent requests. |
 | **Transports** | Manage HTTP/SOCKS5 proxies and see which routes use each. |
-| **Logs** | The recent-request log, filterable by route and status class. Bodies and sensitive headers are never recorded. |
+| **Logs** | The recent-request log, filterable by route and status class, with one-click clear of the memory buffer. Bodies and sensitive headers are never recorded. |
 | **Diagnostics** | Send a test request through a real route or transport and watch every stage: resolution, URL, connection, TLS, status, timing. |
 | **Settings** | Listeners, TLS, log level and log-buffer capacity. |
 

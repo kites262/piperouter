@@ -266,7 +266,15 @@ export interface paths {
         get: operations["getLogs"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Clear the access-log ring buffer
+         * @description Discards every entry currently held in the in-memory access-log ring
+         *     buffer. Capacity and the process-lifetime overflow (`dropped`) counter
+         *     are not modified. Subsequent requests continue to be recorded. The
+         *     operation is idempotent: clearing an empty or disabled ring still
+         *     returns 204.
+         */
+        delete: operations["clearLogs"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1367,6 +1375,25 @@ export interface operations {
                     "application/json": components["schemas"]["LogsResponse"];
                 };
             };
+        };
+    };
+    clearLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ring buffer cleared. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["OriginNotAllowed"];
         };
     };
     testRequest: {

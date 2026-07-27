@@ -152,3 +152,17 @@ func (r *Ring) Dropped() uint64 {
 	defer r.mu.Unlock()
 	return r.dropped
 }
+
+// Clear discards every buffered entry without changing capacity or the
+// dropped counter. No-op when the ring is disabled. New Add calls continue
+// to write into the same buffer.
+func (r *Ring) Clear() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.size == 0 {
+		return
+	}
+	// Zero slots so large string fields become eligible for GC promptly.
+	clear(r.buf)
+	r.next, r.size = 0, 0
+}

@@ -206,6 +206,11 @@ export function getLogs(query: LogsQuery = {}): Promise<LogsResponse> {
   return request('GET', `${BASE}/logs${qs !== '' ? `?${qs}` : ''}`)
 }
 
+/** Empty the in-memory access-log ring buffer (capacity / dropped unchanged). */
+export async function clearLogs(): Promise<void> {
+  await request('DELETE', `${BASE}/logs`)
+}
+
 // ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------

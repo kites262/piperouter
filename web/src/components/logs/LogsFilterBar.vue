@@ -1,7 +1,7 @@
 <!-- Logs filter bar (PRD §19.6): route / status class / limit filters,
-     manual refresh and a visually obvious pause/resume toggle. -->
+     manual refresh, clear buffer, and a visually obvious pause/resume toggle. -->
 <script setup lang="ts">
-import { Pause, Play, RotateCw } from 'lucide-vue-next'
+import { Pause, Play, RotateCw, Trash2 } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
 import Select from '@/components/ui/Select.vue'
@@ -19,9 +19,11 @@ defineProps<{
   paused: boolean
   /** True while a manual refresh is in flight. */
   refreshing: boolean
+  /** True while a clear-buffer request is in flight. */
+  clearing?: boolean
 }>()
 
-defineEmits<{ refresh: []; 'toggle-pause': [] }>()
+defineEmits<{ refresh: []; 'toggle-pause': []; clear: [] }>()
 </script>
 
 <template>
@@ -82,6 +84,11 @@ defineEmits<{ refresh: []; 'toggle-pause': [] }>()
       <Button variant="outline" :loading="refreshing" @click="$emit('refresh')">
         <RotateCw v-if="!refreshing" class="h-4 w-4" />
         Refresh
+      </Button>
+
+      <Button variant="outline" :loading="clearing" @click="$emit('clear')">
+        <Trash2 v-if="!clearing" class="h-4 w-4" />
+        Clear
       </Button>
     </div>
   </div>

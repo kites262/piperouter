@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: PipeRouter Admin API
-  version: 0.3.5
+  version: 0.3.6
   description: |
     REST/JSON management API for PipeRouter, a lightweight HTTP distribution
     proxy. Served under `/api/v1` by the admin server (default
@@ -446,6 +446,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LogsResponse'
+    delete:
+      tags: [logs]
+      operationId: clearLogs
+      summary: Clear the access-log ring buffer
+      description: |
+        Discards every entry currently held in the in-memory access-log ring
+        buffer. Capacity and the process-lifetime overflow (`dropped`) counter
+        are not modified. Subsequent requests continue to be recorded. The
+        operation is idempotent: clearing an empty or disabled ring still
+        returns 204.
+      responses:
+        '204':
+          description: Ring buffer cleared.
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
 
   /api/v1/diagnostics/request:
     post:

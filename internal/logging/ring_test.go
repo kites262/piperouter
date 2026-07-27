@@ -287,3 +287,52 @@ func TestRingEnabled(t *testing.T) {
 		t.Error("Enabled() = false after SetCapacity(8)")
 	}
 }
+
+func TestRingClear(t *testing.T) {
+	r := NewRing(4)
+	addSeq(r, 4)
+	// Force an overflow so Dropped is non-zero and must survive Clear.
+	r.Add(entry("x", 200, ""))
+	if d := r.Dropped(); d != 1 {
+		t.Fatalf("pre-clear Dropped = %d, want 1", d)
+	}
+
+	r.Clear()
+	if got := r.Snapshot(0, "", ""); len(got) != 0 {
+		t.Fatalf("after Clear Snapshot = %v, want empty", got)
+	}
+	if c := r.Capacity(); c != 4 {
+		t.Errorf("after Clear Capacity = %d, want 4", c)
+	}
+	if d := r.Dropped(); d != 1 {
+		t.Errorf("after Clear Dropped = %d, want 1 (unchanged)", d)
+	}
+	if !r.Enabled() {
+		t.Error("after Clear Enabled() = false, want true")
+	}
+
+	// Second clear is a no-op.
+	r.Clear()
+	if got := r.Snapshot(0, "", ""); len(got) != 0 {
+		t.Fatalf("second Clear Snapshot = %v, want empty", got)
+	}
+
+	// New entries write into the same buffer.
+	r.Add(entry("a", 200, ""))
+	r.Add(entry("b", 404, ""))
+	got := r.Snapshot(0, "", "")
+	if len(got) != 2 || got[0].Route != "b" || got[1].Route != "a" {
+		t.Fatalf("post-clear entries = %+v, want b then a", got)
+	}
+}
+
+func TestRingClearDisabled(t *testing.T) {
+	r := NewRing(0)
+	r.Clear() // must not panic
+	if got := r.Snapshot(0, "", ""); len(got) != 0 {
+		t.Errorf("disabled Clear Snapshot = %v", got)
+	}
+	if d := r.Dropped(); d != 0 {
+		t.Errorf("disabled Clear Dropped = %d", d)
+	}
+}
