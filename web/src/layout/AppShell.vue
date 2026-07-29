@@ -43,14 +43,6 @@ function isActive(to: string): boolean {
   return route.path === to || route.path.startsWith(`${to}/`)
 }
 
-// Row styling for the pinned Settings link (the primary nav uses the sliding
-// indicator behind it instead of a static background).
-function navClass(active: boolean): string {
-  return active
-    ? 'bg-accent-soft font-medium text-accent'
-    : 'text-fg-secondary hover:bg-surface-raised hover:text-fg'
-}
-
 // --- sliding selection indicator ------------------------------------------
 // A single pill slides behind the active primary-nav item. Its geometry is
 // measured from the active link so it tracks any layout; the spring transition
@@ -147,7 +139,7 @@ const adminPosture = computed(() => {
 <template>
   <div class="flex h-screen overflow-hidden">
     <!-- Sidebar — liquid glass -->
-    <aside class="glass z-20 flex w-60 shrink-0 flex-col border-y-0 border-l-0">
+    <aside class="glass z-20 flex w-64 shrink-0 flex-col border-y-0 border-l-0">
       <div class="flex h-14 items-center gap-2.5 border-b border-border px-4">
         <span
           class="logo-glow flex h-8 w-8 items-center justify-center rounded-lg border border-accent/20 bg-accent-soft text-accent elevate"
@@ -160,9 +152,9 @@ const adminPosture = computed(() => {
         </div>
       </div>
 
-      <nav class="relative flex-1 space-y-1 overflow-y-auto p-3">
+      <nav class="relative flex-1 space-y-2 overflow-y-auto p-3">
         <span
-          class="nav-indicator pointer-events-none absolute top-0 z-0 rounded-lg bg-accent-soft"
+          class="nav-indicator pointer-events-none absolute top-0 z-0 rounded-xl bg-accent-soft"
           :class="indicator.visible ? 'opacity-100' : 'opacity-0'"
           :style="{
             transform: `translateY(${indicator.top}px)`,
@@ -179,38 +171,50 @@ const adminPosture = computed(() => {
           :key="item.to"
           :ref="(el) => captureItem(el as Element | ComponentPublicInstance | null, i)"
           :to="item.to"
-          class="relative z-10 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150"
+          class="hero-button relative z-10"
           :class="
             isActive(item.to)
-              ? 'font-medium text-accent'
-              : 'text-fg-secondary hover:bg-surface-raised/70 hover:text-fg'
+              ? 'is-active text-accent'
+              : 'text-fg-secondary hover:text-fg'
           "
         >
-          <component :is="item.icon" class="h-4 w-4 shrink-0" />
-          {{ item.label }}
+          <span class="hero-button-icon">
+            <component :is="item.icon" class="h-4.5 w-4.5" />
+          </span>
+          <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
         </RouterLink>
       </nav>
 
-      <div class="space-y-1 border-t border-border p-3">
+      <div class="space-y-2 border-t border-border p-3">
         <RouterLink
           to="/settings"
-          class="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150"
-          :class="navClass(isActive('/settings'))"
+          class="hero-button"
+          :class="
+            isActive('/settings')
+              ? 'is-active bg-accent-soft text-accent'
+              : 'text-fg-secondary hover:text-fg'
+          "
         >
-          <Settings class="h-4 w-4 shrink-0" />
-          Settings
+          <span class="hero-button-icon">
+            <Settings class="h-4.5 w-4.5" />
+          </span>
+          <span class="min-w-0 flex-1 truncate">Settings</span>
         </RouterLink>
         <button
           type="button"
-          class="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-fg-secondary transition-colors duration-150 hover:bg-surface-raised/70 hover:text-fg"
+          class="hero-button text-fg-secondary hover:text-fg"
           :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`"
           :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`"
           @click="toggleTheme"
         >
-          <component :is="theme === 'dark' ? Sun : Moon" class="h-4 w-4 shrink-0" />
-          {{ theme === 'dark' ? 'Light mode' : 'Dark mode' }}
+          <span class="hero-button-icon">
+            <component :is="theme === 'dark' ? Sun : Moon" class="h-4.5 w-4.5" />
+          </span>
+          <span class="min-w-0 flex-1 truncate">{{
+            theme === 'dark' ? 'Light mode' : 'Dark mode'
+          }}</span>
         </button>
-        <div class="flex items-center gap-2 px-3 pt-1.5" :class="adminPosture.tone">
+        <div class="flex items-center gap-2 px-3 pt-1" :class="adminPosture.tone">
           <component :is="adminPosture.icon" class="h-3.5 w-3.5 shrink-0" />
           <span class="truncate text-[11px]">{{ adminPosture.label }}</span>
         </div>

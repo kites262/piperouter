@@ -6,7 +6,7 @@ import Spinner from './Spinner.vue'
 const props = withDefaults(
   defineProps<{
     variant?: 'default' | 'outline' | 'ghost' | 'danger'
-    size?: 'sm' | 'md' | 'lg' | 'icon'
+    size?: 'sm' | 'md' | 'lg' | 'icon' | 'hero'
     type?: 'button' | 'submit' | 'reset'
     disabled?: boolean
     loading?: boolean
@@ -30,6 +30,8 @@ const sizes = {
   md: 'h-9 gap-1.5 px-3.5 text-sm',
   lg: 'h-10 gap-2 px-5 text-sm',
   icon: 'h-9 w-9 gap-0',
+  // Full-width tile for sparse chrome / empty-state CTAs.
+  hero: 'h-12 w-full gap-2.5 rounded-xl px-5 text-sm',
 } as const
 
 const classes = computed(() => [variants[props.variant], sizes[props.size]])
