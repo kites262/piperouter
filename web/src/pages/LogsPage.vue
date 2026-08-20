@@ -5,10 +5,11 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { AlertTriangle, ScrollText, SearchX } from 'lucide-vue-next'
 
-import { ApiError, clearLogs, getLogs, listRoutes } from '@/api/client'
-import type { LogsResponse, StatusClass } from '@/api/types'
+import { ApiError, clearLogs, getDetailsCapture, getLogs, listRoutes, setDetailsCapture } from '@/api/client'
+import type { AccessLogEntry, DetailsCaptureStatus, LogsResponse, StatusClass } from '@/api/types'
 import LogsFilterBar from '@/components/logs/LogsFilterBar.vue'
 import LogsTable from '@/components/logs/LogsTable.vue'
+import LogDetailsDialog from '@/components/logs/LogDetailsDialog.vue'
 import Button from '@/components/ui/Button.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -23,6 +24,10 @@ const routeNames = ref<string[]>([])
 const loadError = ref<string | null>(null)
 const refreshing = ref(false)
 const isPaused = ref(false)
+const detailsCapture = ref<DetailsCaptureStatus | null>(null)
+const detailsBusy = ref(false)
+const selectedEntry = ref<AccessLogEntry | null>(null)
+const detailsDialogOpen = ref(false)
 
 const routeFilter = ref('')
 const statusFilter = ref('')
@@ -90,6 +95,25 @@ function clearFilters(): void {
   limitFilter.value = '100'
 }
 
+async function toggleDetailsCapture(): Promise<void> {
+  if (!detailsCapture.value) return
+  detailsBusy.value = true
+  try {
+    detailsCapture.value = await setDetailsCapture(!detailsCapture.value.enabled)
+    toast.success(detailsCapture.value.enabled ? 'Request details capture enabled' : 'Request details capture disabled')
+  } catch (err) {
+    toast.error(err instanceof ApiError ? err.message : 'Failed to change details capture')
+  } finally {
+    detailsBusy.value = false
+  }
+}
+
+function openDetails(entry: AccessLogEntry): void {
+  if (!entry.details_available || !entry.details_id) return
+  selectedEntry.value = entry
+  detailsDialogOpen.value = true
+}
+
 function openClearDialog(): void {
   clearOpen.value = true
 }
@@ -120,6 +144,11 @@ onMounted(async () => {
   } catch {
     // Route list is only for the filter dropdown; ignore failures.
   }
+  try {
+    detailsCapture.value = await getDetailsCapture()
+  } catch {
+    // Details capture is optional; keep the logs page usable if unavailable.
+  }
   await fetchLogs()
   startPolling()
 })
@@ -132,8 +161,7 @@ onUnmounted(stopPolling)
     <div class="animate-fade-up">
       <h1 class="text-lg font-semibold tracking-tight text-fg">Logs</h1>
       <p class="mt-1 text-sm text-fg-muted">
-        Recent access log ring buffer — no bodies, no credentials. Rows with forward headers
-        (X-Forwarded-*) expand to show them.
+        Recent access-log summaries. Enable details capture only while diagnosing a request.
       </p>
     </div>
 
@@ -146,9 +174,12 @@ onUnmounted(stopPolling)
         :paused="isPaused"
         :refreshing="refreshing"
         :clearing="clearing"
+        :details-enabled="detailsCapture?.enabled ?? false"
+        :details-busy="detailsBusy"
         @refresh="onManualRefresh"
         @toggle-pause="togglePause"
         @clear="openClearDialog"
+        @toggle-details="toggleDetailsCapture"
       />
     </div>
 
@@ -210,13 +241,15 @@ onUnmounted(stopPolling)
       >
         <template #icon><ScrollText class="h-5 w-5" /></template>
       </EmptyState>
-      <LogsTable v-else :entries="entries" />
+      <LogsTable v-else :entries="entries" @view-details="openDetails" />
 
       <p class="font-mono text-xs text-fg-muted">
         showing {{ entries.length }} entries · ring capacity {{ logs.capacity }} · dropped
         {{ logs.dropped }}
       </p>
     </template>
+
+    <LogDetailsDialog v-model:open="detailsDialogOpen" :entry="selectedEntry" />
 
     <ConfirmDialog
       v-model:open="clearOpen"

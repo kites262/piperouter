@@ -1,6 +1,10 @@
 package proxy
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/kites262/piperouter/internal/logging"
+)
 
 // responseRecorder wraps the server's ResponseWriter to record the final
 // status code and whether anything was written, without interfering with
@@ -12,6 +16,7 @@ type responseRecorder struct {
 	http.ResponseWriter
 	status      int
 	wroteHeader bool
+	details     *logging.Capture
 }
 
 func newResponseRecorder(w http.ResponseWriter) *responseRecorder {
@@ -22,6 +27,9 @@ func (r *responseRecorder) WriteHeader(code int) {
 	if !r.wroteHeader {
 		r.status = code
 		r.wroteHeader = true
+		if r.details != nil {
+			r.details.ResponseHeaders(r.Header())
+		}
 	}
 	r.ResponseWriter.WriteHeader(code)
 }
@@ -30,6 +38,12 @@ func (r *responseRecorder) Write(b []byte) (int, error) {
 	if !r.wroteHeader {
 		r.status = http.StatusOK
 		r.wroteHeader = true
+		if r.details != nil {
+			r.details.ResponseHeaders(r.Header())
+		}
+	}
+	if r.details != nil {
+		r.details.ResponseBody(b)
 	}
 	return r.ResponseWriter.Write(b)
 }

@@ -1,7 +1,7 @@
 <!-- Logs filter bar (PRD §19.6): route / status class / limit filters,
      manual refresh, clear buffer, and a visually obvious pause/resume toggle. -->
 <script setup lang="ts">
-import { Pause, Play, RotateCw, Trash2 } from 'lucide-vue-next'
+import { Pause, Play, RotateCw, Trash2, Bug } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
 import Select from '@/components/ui/Select.vue'
@@ -21,9 +21,11 @@ defineProps<{
   refreshing: boolean
   /** True while a clear-buffer request is in flight. */
   clearing?: boolean
+  detailsEnabled: boolean
+  detailsBusy?: boolean
 }>()
 
-defineEmits<{ refresh: []; 'toggle-pause': []; clear: [] }>()
+defineEmits<{ refresh: []; 'toggle-pause': []; clear: []; 'toggle-details': [] }>()
 </script>
 
 <template>
@@ -84,6 +86,16 @@ defineEmits<{ refresh: []; 'toggle-pause': []; clear: [] }>()
       <Button variant="outline" :loading="refreshing" @click="$emit('refresh')">
         <RotateCw v-if="!refreshing" class="h-4 w-4" />
         Refresh
+      </Button>
+      <Button
+        :variant="detailsEnabled ? 'default' : 'outline'"
+        :loading="detailsBusy"
+        :aria-pressed="detailsEnabled"
+        title="Record complete request and response details from now on"
+        @click="$emit('toggle-details')"
+      >
+        <Bug v-if="!detailsBusy" class="h-4 w-4" />
+        Details
       </Button>
 
       <Button variant="outline" :loading="clearing" @click="$emit('clear')">

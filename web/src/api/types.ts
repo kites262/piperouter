@@ -58,6 +58,13 @@ export interface ServerConfig {
 export interface RuntimeConfig {
   log_level: LogLevel
   recent_logs: number
+  request_details: RequestDetailsConfig
+}
+
+export interface RequestDetailsConfig {
+  max_bytes: number
+  max_entry_bytes: number
+  body_bytes: number
 }
 
 export interface NetworkConfig {
@@ -295,6 +302,8 @@ export interface AccessLogEntry {
   error: string
   /** Forward headers the client sent (Forwarded/Via/X-Forwarded-*); omitted when none. */
   forward_headers?: ForwardHeader[]
+  details_id?: string
+  details_available?: boolean
 }
 
 /** GET /api/v1/logs response. */
@@ -302,6 +311,47 @@ export interface LogsResponse {
   entries: AccessLogEntry[]
   dropped: number
   capacity: number
+}
+
+export interface DetailsCaptureStatus {
+  enabled: boolean
+  max_bytes: number
+  max_entry_bytes: number
+  body_bytes: number
+}
+
+export interface LogDetails {
+  id: string
+  started_at: TimeString
+  finished_at: TimeString
+  method: string
+  request_url: string
+  host: string
+  remote_addr: string
+  proto: string
+  request_headers: Record<string, string[]>
+  request_body?: unknown
+  request_body_bytes: number
+  request_body_truncated: boolean
+  route: string
+  transport: string
+  outbound_url: string
+  outbound_headers?: Record<string, string[]>
+  status: number
+  response_headers?: Record<string, string[]>
+  response_body?: unknown
+  response_body_bytes: number
+  response_body_truncated: boolean
+  streaming: StreamKind
+  error: string
+}
+
+export interface LongStringPreview {
+  type: 'long_string'
+  length: number
+  prefix: string
+  suffix: string
+  value_ref: string
 }
 
 /** GET /api/v1/logs query parameters. */

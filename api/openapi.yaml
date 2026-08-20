@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: PipeRouter Admin API
-  version: 0.3.7
+  version: 0.4.0
   description: |
     REST/JSON management API for PipeRouter, a lightweight HTTP distribution
     proxy. Served under `/api/v1` by the admin server (default
@@ -462,6 +462,81 @@ paths:
         '403':
           $ref: '#/components/responses/OriginNotAllowed'
 
+  /api/v1/logs/details-capture:
+    get:
+      tags: [logs]
+      operationId: getDetailsCapture
+      summary: Get request-details capture state
+      responses:
+        '200':
+          description: Current temporary capture state and configured limits.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailsCaptureStatus'
+    put:
+      tags: [logs]
+      operationId: setDetailsCapture
+      summary: Enable or disable request-details capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetailsCaptureRequest'
+      responses:
+        '200':
+          description: Updated capture state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailsCaptureStatus'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+
+  /api/v1/logs/{id}/details:
+    get:
+      tags: [logs]
+      operationId: getLogDetails
+      summary: Get one captured request and response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Captured details with long strings summarized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogDetails'
+
+  /api/v1/logs/{id}/values/{ref}:
+    get:
+      tags: [logs]
+      operationId: getLogDetailValue
+      summary: Get one complete long-string value
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: ref
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Complete value.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [value]
+                properties:
+                  value: { type: string }
+
   /api/v1/diagnostics/request:
     post:
       tags: [diagnostics]
@@ -730,6 +805,28 @@ components:
             Capacity of the in-memory access-log ring buffer. `0` disables
             it. Defaults to 1000 when omitted.
           default: 1000
+        request_details:
+          $ref: '#/components/schemas/RequestDetailsConfig'
+
+    RequestDetailsConfig:
+      type: object
+      description: Persisted memory limits for the temporary details recorder.
+      properties:
+        max_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 67108864
+        max_entry_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 8388608
+        body_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 262144
 
     NetworkConfig:
       type: object
@@ -1277,6 +1374,12 @@ components:
         error:
           type: string
           description: Error classification code (e.g. `upstream_timeout`); empty if none.
+        details_id:
+          type: string
+          description: Temporary captured-details identifier, when available.
+        details_available:
+          type: boolean
+          description: Whether the captured details are still in the byte-bounded store.
         forward_headers:
           type: array
           description: >
@@ -1314,6 +1417,49 @@ components:
         capacity:
           type: integer
           description: Current ring-buffer capacity (0 = disabled).
+
+    DetailsCaptureStatus:
+      type: object
+      required: [enabled, max_bytes, max_entry_bytes, body_bytes]
+      properties:
+        enabled: { type: boolean }
+        max_bytes: { type: integer, format: int64 }
+        max_entry_bytes: { type: integer, format: int64 }
+        body_bytes: { type: integer, format: int64 }
+
+    DetailsCaptureRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+
+    LogDetails:
+      type: object
+      description: Captured request and response metadata and bounded bodies.
+      properties:
+        id: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        method: { type: string }
+        request_url: { type: string }
+        host: { type: string }
+        remote_addr: { type: string }
+        proto: { type: string }
+        request_headers: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        request_body: {}
+        request_body_bytes: { type: integer }
+        request_body_truncated: { type: boolean }
+        route: { type: string }
+        transport: { type: string }
+        outbound_url: { type: string }
+        outbound_headers: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        status: { type: integer }
+        response_headers: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        response_body: {}
+        response_body_bytes: { type: integer }
+        response_body_truncated: { type: boolean }
+        streaming: { type: string }
+        error: { type: string }
 
     RequestTestRequest:
       type: object

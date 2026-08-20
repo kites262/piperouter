@@ -42,14 +42,19 @@ type Handler interface {
 }
 
 // NewHandler builds the data-plane HTTP handler.
-func NewHandler(sp SnapshotProvider, reg *metrics.Registry, ring *logging.Ring, logger *slog.Logger) Handler {
+func NewHandler(sp SnapshotProvider, reg *metrics.Registry, ring *logging.Ring, logger *slog.Logger, detailStores ...*logging.DetailsStore) Handler {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
+	}
+	var detailStore *logging.DetailsStore
+	if len(detailStores) > 0 {
+		detailStore = detailStores[0]
 	}
 	h := &handler{
 		sp:      sp,
 		reg:     reg,
 		ring:    ring,
+		details: detailStore,
 		logger:  logger,
 		tunnels: map[uint64]func(){},
 	}
@@ -61,10 +66,11 @@ func NewHandler(sp SnapshotProvider, reg *metrics.Registry, ring *logging.Ring, 
 }
 
 type handler struct {
-	sp     SnapshotProvider
-	reg    *metrics.Registry
-	ring   *logging.Ring
-	logger *slog.Logger
+	sp      SnapshotProvider
+	reg     *metrics.Registry
+	ring    *logging.Ring
+	details *logging.DetailsStore
+	logger  *slog.Logger
 
 	// reverse is the process-lifetime ReverseProxy; reverseCall rides on
 	// request context. errorLog is its ErrorLog (also process-lifetime).
@@ -141,6 +147,8 @@ type requestState struct {
 	errClass      string                // classification code for the access entry
 	handle        *metrics.ActiveHandle // non-nil once the active gauges were incremented
 	skipObserve   bool                  // client canceled: no Observe (§9.6)
+	sseTerminal   bool                  // an OpenAI-compatible SSE terminal marker was received
+	details       *logging.Capture
 
 	// Populated only for serveReverse; read by shared ReverseProxy hooks.
 	route *router.Route
@@ -150,8 +158,18 @@ type requestState struct {
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	var capture *logging.Capture
+	if h.details != nil && h.details.Enabled() {
+		capture = h.details.Begin(r)
+		if capture != nil && r.Body != nil {
+			r.Body = capture.RequestBody(r.Body)
+		}
+	}
 	rw := newResponseRecorder(w)
-	st := &requestState{path: r.URL.EscapedPath()}
+	if capture != nil {
+		rw.details = capture
+	}
+	st := &requestState{path: r.URL.EscapedPath(), details: capture}
 	defer h.finalize(rw, r, st, start)
 
 	snap := h.sp.Current()
@@ -176,6 +194,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	st.routeName = route.Name
 	st.transportName = route.TransportName
+	if capture != nil {
+		capture.SetRoute(st.routeName, st.transportName)
+	}
 
 	// Static routes serve one local file — no transport, no WebSocket, no rewrite.
 	if route.IsStatic() {
@@ -219,8 +240,10 @@ func (h *handler) finalize(rw *responseRecorder, r *http.Request, st *requestSta
 			// ReverseProxy aborts the response when the client goes away
 			// mid-stream; account for it, then let the server tear the
 			// connection down (it recovers ErrAbortHandler silently).
-			st.errClass = errClientCanceled
-			st.skipObserve = true
+			if !st.sseTerminal {
+				st.errClass = errClientCanceled
+				st.skipObserve = true
+			}
 			abort = true
 		} else {
 			h.logger.Error("proxy: panic recovered",
@@ -261,6 +284,12 @@ func (h *handler) finalize(rw *responseRecorder, r *http.Request, st *requestSta
 		Transport:  st.transportName,
 		Streaming:  string(st.streaming),
 		Error:      st.errClass,
+	}
+	if st.details != nil {
+		st.details.SetResult(rw.status, string(st.streaming), st.errClass)
+		st.details.Finish()
+		entry.DetailsID = st.details.ID()
+		entry.DetailsAvailable = h.details != nil && h.details.Has(entry.DetailsID)
 	}
 	if h.ring != nil && h.ring.Enabled() {
 		// Ring only — LogAccess never emits header values to stdout. Not

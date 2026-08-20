@@ -47,6 +47,12 @@ runtime:
   # In-memory ring buffer of recent access-log entries shown in the WebUI.
   # 0 disables the buffer. Nothing is ever written to disk.
   recent_logs: 1000
+  # Limits for the opt-in request/response details recorder. The Logs UI
+  # toggle starts capture temporarily; it is off after every restart.
+  request_details:
+    max_bytes: 67108864
+    max_entry_bytes: 8388608
+    body_bytes: 262144
 
 # Outbound links (PRD §5.2). The built-in transport "direct" (no proxy)
 # always exists and must not be declared here. Proxy URLs must not contain

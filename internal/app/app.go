@@ -96,6 +96,7 @@ type App struct {
 	manager  *runtime.Manager
 	registry *metrics.Registry
 	ring     *logging.Ring
+	details  *logging.DetailsStore
 	watcher  *config.Watcher // nil when hot reload is unavailable
 
 	proxySrv     *http.Server
@@ -173,6 +174,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 		manager:  manager,
 		registry: reg,
 		ring:     logging.NewRing(*cfg.Runtime.RecentLogs),
+		details:  logging.NewDetailsStore(cfg.Runtime.RequestDetails.MaxBytes, cfg.Runtime.RequestDetails.MaxEntryBytes, cfg.Runtime.RequestDetails.BodyBytes),
 		serveErr: make(chan error, 2),
 	}
 
@@ -184,6 +186,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 		if s.Config.Runtime.RecentLogs != nil {
 			a.ring.SetCapacity(*s.Config.Runtime.RecentLogs)
 		}
+		a.details.SetLimits(s.Config.Runtime.RequestDetails.MaxBytes, s.Config.Runtime.RequestDetails.MaxEntryBytes, s.Config.Runtime.RequestDetails.BodyBytes)
 		if cliLogLevel != "" {
 			return // CLI override outranks the file for the whole process lifetime
 		}
@@ -211,7 +214,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 	// debug level so it never floods production logs.
 	httpErrLog := slog.NewLogLogger(logger.Handler(), slog.LevelDebug)
 
-	a.proxyHandler = proxy.NewHandler(manager, reg, a.ring, logger)
+	a.proxyHandler = proxy.NewHandler(manager, reg, a.ring, logger, a.details)
 	a.proxySrv = &http.Server{
 		Handler:     a.proxyHandler,
 		IdleTimeout: 120 * time.Second,
@@ -248,6 +251,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 				Manager:   manager,
 				Metrics:   reg,
 				Ring:      a.ring,
+				Details:   a.details,
 				Logger:    logger,
 				Version:   opts.Version,
 				WebUI:     webHandler,

@@ -70,6 +70,10 @@ server:
 runtime:
   log_level: info               # debug | info | warn | error
   recent_logs: 1000             # in-memory access-log ring buffer; 0 disables
+  request_details:
+    max_bytes: 67108864         # total detail-store capacity (64 MiB)
+    max_entry_bytes: 8388608    # maximum retained detail record (8 MiB)
+    body_bytes: 262144          # request/response body cap per direction
 
 network:                        # global outbound tuning (see "Timeouts")
   dial_timeout: 10s
@@ -148,10 +152,15 @@ With `admin.enabled: false` the admin API and WebUI are off; the proxy keeps run
 | --- | --- | --- | --- |
 | `log_level` | string | `"info"` | application log level: `debug`, `info`, `warn` or `error` |
 | `recent_logs` | int | `1000` | capacity of the in-memory access-log ring buffer shown in the WebUI; `0` disables it; must be ≥ 0 |
+| `request_details.max_bytes` | int64 | `67108864` | total in-memory capacity for opt-in request details |
+| `request_details.max_entry_bytes` | int64 | `8388608` | maximum retained size of one detail record |
+| `request_details.body_bytes` | int64 | `262144` | maximum captured request or response body per direction |
 
 The ring buffer overwrites the oldest entries when full and is cleared on restart. Nothing is written to disk. Structured logs go to stdout.
 
-Ring entries record method, path (never the query string), status, duration, transport and stream kind — plus, when the client sent any, its forward headers (`Forwarded`, `Via`, `X-Forwarded-*`; values capped at 256 characters). Forward headers are captured even on routes that strip them from the outbound request, so the WebUI always shows the original client. No other header values, and never any bodies, are recorded; header values never go to stdout.
+Normal ring entries record method, path (never the query string), status, duration, transport and stream kind — plus, when the client sent any, its forward headers (`Forwarded`, `Via`, `X-Forwarded-*`; values capped at 256 characters). Forward headers are captured even on routes that strip them from the outbound request, so the WebUI always shows the original client. No other header values, and never any bodies, are recorded on this normal path; header values never go to stdout.
+
+The Logs page's **Capture details** switch starts temporary in-memory request/response capture; it is off after restart and does not change the YAML file. The normal log list contains only summaries. Clicking **View full request details** fetches one captured record; unusually long JSON strings are shown as a prefix/suffix preview and fetched in full only when clicked. Details are bounded by the limits above, evicted oldest-first, and are cleared with the access-log buffer. Captured headers are redacted for common credentials, but request/response bodies may contain sensitive data; enable this only for controlled debugging.
 
 ### `network` — timeouts
 
@@ -269,6 +278,7 @@ The loader rejects a configuration (listing **all** problems at once) when any o
 - `tls.enabled: true` but `cert_file` or `key_file` is empty;
 - `runtime.log_level` is not one of `debug`, `info`, `warn`, `error`;
 - `runtime.recent_logs` is negative.
+- a `runtime.request_details` limit is negative or its per-entry/body limit exceeds the parent limit.
 
 ### Prefix rules
 
@@ -389,6 +399,12 @@ Upstream HTTP responses — including `401`, `404`, `429`, `500` — are relayed
 | WebSocket upgrade toward the upstream failed | `502` | `{"error":"websocket_upgrade_failed"}` |
 | Unexpected internal error (recovered panic) | `500` | `{"error":"internal_error"}` |
 | Client canceled the request | — | no response is written (logged as `client_canceled`) |
+
+For OpenAI-compatible SSE responses, receiving `data: [DONE]` or
+`event: response.completed` completes the request for access-log accounting.
+If the client closes the HTTP stream immediately afterward, the entry remains
+a successful streamed response rather than being relabeled `client_canceled`.
+Disconnects before a terminal event are still recorded as cancellations.
 
 Static file responses (including a missing file → `404` from the file server) are ordinary HTTP responses, not the JSON error envelope above.
 

@@ -6,9 +6,45 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestSSECompletionMarkersAcrossReadBoundaries(t *testing.T) {
+	tests := []struct {
+		name  string
+		body  string
+		match bool
+	}{
+		{name: "done", body: "data: token\n\ndata: [DONE]\n\n", match: true},
+		{name: "response completed CRLF", body: "event: response.completed\r\ndata: {}\r\n\r\n", match: true},
+		{name: "marker inside data", body: "data: {\"message\":\"event: response.completed\"}\n\n", match: false},
+		{name: "longer event name", body: "event: response.completedly\n\n", match: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched := false
+			body := &sseCompletionTrackingBody{
+				ReadCloser:      io.NopCloser(strings.NewReader(tt.body)),
+				reachedTerminal: &matched,
+			}
+			buf := make([]byte, 3)
+			for {
+				_, err := body.Read(buf)
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatalf("Read: %v", err)
+				}
+			}
+			if matched != tt.match {
+				t.Fatalf("terminal match = %v, want %v", matched, tt.match)
+			}
+		})
+	}
+}
 
 // TestSSEStreamsIncrementally proves events reach the client one by one
 // (PRD §10.3, §23.5): the client must receive event 1 BEFORE the upstream
@@ -133,6 +169,48 @@ routes:
 	e := lastEntry(t, tp.ring, 1)
 	if e.Streaming != "sse" || e.Status != 200 || e.Route != "api" || e.Error != "" {
 		t.Fatalf("access entry = %+v", e)
+	}
+}
+
+func TestSSETerminalEventFollowedByClientCloseIsSuccessful(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, "event: response.completed\ndata: {}\n\n")
+		http.NewResponseController(w).Flush()
+		// Codex closes after the terminal event; keep the HTTP body open so
+		// the test reproduces the cancellation/EOF race seen in production.
+		<-r.Context().Done()
+	}))
+	t.Cleanup(upstream.Close)
+
+	snap := buildSnapshot(t, fmt.Sprintf(`
+version: v0.3
+routes:
+  - name: api
+    prefix: /api
+    options:
+      target: %s
+`, upstream.URL))
+	tp := newTestProxy(t, snap)
+
+	resp, err := http.Get(tp.server.URL + "/api/sse")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	br := bufio.NewReader(resp.Body)
+	line, err := br.ReadString('\n')
+	if err != nil || line != "event: response.completed\n" {
+		t.Fatalf("terminal event = %q, %v", line, err)
+	}
+	resp.Body.Close()
+
+	e := lastEntry(t, tp.ring, 1)
+	if e.Streaming != "sse" || e.Status != http.StatusOK || e.Error != "" {
+		t.Fatalf("terminal SSE access entry = %+v", e)
+	}
+	if got := tp.reg.Snapshot().TotalRequests; got != 1 {
+		t.Fatalf("TotalRequests = %d, want 1", got)
 	}
 }
 

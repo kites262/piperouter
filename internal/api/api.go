@@ -32,6 +32,7 @@ type Deps struct {
 	Manager *runtime.Manager
 	Metrics *metrics.Registry
 	Ring    *logging.Ring
+	Details *logging.DetailsStore
 	Logger  *slog.Logger
 	Version string
 	WebUI   http.Handler // nil → no UI mounted, non-API paths get 404 JSON
@@ -99,6 +100,10 @@ func (s *server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/metrics/history", s.handleMetricsHistory)
 	s.mux.HandleFunc("GET /api/v1/logs", s.handleLogs)
 	s.mux.HandleFunc("DELETE /api/v1/logs", s.handleLogsClear)
+	s.mux.HandleFunc("GET /api/v1/logs/details-capture", s.handleDetailsCaptureGet)
+	s.mux.HandleFunc("PUT /api/v1/logs/details-capture", s.handleDetailsCapturePut)
+	s.mux.HandleFunc("GET /api/v1/logs/{id}/details", s.handleLogDetails)
+	s.mux.HandleFunc("GET /api/v1/logs/{id}/values/{ref}", s.handleLogDetailValue)
 
 	s.mux.HandleFunc("POST /api/v1/diagnostics/request", s.handleDiagnosticsRequest)
 	s.mux.HandleFunc("POST /api/v1/diagnostics/route", s.handleDiagnosticsRoute)

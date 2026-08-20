@@ -668,6 +668,16 @@ body::after {
 }
 
 /* Vue transitions */
+.dialog-backdrop {
+  background-color: rgb(0 0 0 / 0.66);
+  /* A full-screen backdrop-filter is repainted while the dialog's inner
+     scroller moves and may flash on Chromium/GPU combinations. Keep this
+     overlay on a stable, independent layer without sampling the page below. */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  contain: strict;
+}
+
 .page-enter-active {
   transition:
     opacity var(--duration-base) var(--ease-out-soft),

@@ -336,6 +336,17 @@ routes:
 		"active gauge back to 0 after cancel")
 }
 
+func TestClientCloseAfterSSETerminalIsNotLoggedAsCanceled(t *testing.T) {
+	h := &handler{}
+	st := &requestState{routeName: "api", sseTerminal: true}
+	rw := newResponseRecorder(httptest.NewRecorder())
+	r := httptest.NewRequest(http.MethodGet, "/api/sse", nil)
+	h.handleUpstreamError(rw, r, context.Canceled, st)
+	if st.errClass != "" || st.skipObserve {
+		t.Fatalf("completed SSE classified as cancellation: err=%q skip=%v", st.errClass, st.skipObserve)
+	}
+}
+
 // flakyProvider panics on the first Current() call, then serves a real
 // snapshot: the process must survive and keep serving (§22.3).
 type flakyProvider struct {

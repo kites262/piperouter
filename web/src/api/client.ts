@@ -13,6 +13,8 @@ import type {
   DiagnosticsResult,
   LogsQuery,
   LogsResponse,
+  DetailsCaptureStatus,
+  LogDetails,
   MetricsHistoryResponse,
   MetricsSnapshot,
   RouteConfig,
@@ -209,6 +211,26 @@ export function getLogs(query: LogsQuery = {}): Promise<LogsResponse> {
 /** Empty the in-memory access-log ring buffer (capacity / dropped unchanged). */
 export async function clearLogs(): Promise<void> {
   await request('DELETE', `${BASE}/logs`)
+}
+
+export function getDetailsCapture(): Promise<DetailsCaptureStatus> {
+  return request('GET', `${BASE}/logs/details-capture`)
+}
+
+export function setDetailsCapture(enabled: boolean): Promise<DetailsCaptureStatus> {
+  return request('PUT', `${BASE}/logs/details-capture`, { enabled })
+}
+
+export function getLogDetails(id: string): Promise<LogDetails> {
+  return request('GET', `${BASE}/logs/${encodeURIComponent(id)}/details`)
+}
+
+export async function getLogDetailValue(id: string, ref: string): Promise<string> {
+  const data = await request<{ value: string }>(
+    'GET',
+    `${BASE}/logs/${encodeURIComponent(id)}/values/${encodeURIComponent(ref)}`,
+  )
+  return data.value
 }
 
 // ---------------------------------------------------------------------------

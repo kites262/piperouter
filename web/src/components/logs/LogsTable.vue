@@ -14,6 +14,7 @@ import type { AccessLogEntry } from '@/api/types'
 import Badge from '@/components/ui/Badge.vue'
 
 defineProps<{ entries: AccessLogEntry[] }>()
+const emit = defineEmits<{ 'view-details': [entry: AccessLogEntry] }>()
 
 type BadgeVariant = 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'
 
@@ -112,6 +113,10 @@ function onRowKeydown(event: KeyboardEvent, entry: AccessLogEntry): void {
     event.preventDefault()
     toggleExpand(entry)
   }
+}
+
+function viewDetails(entry: AccessLogEntry): void {
+  emit('view-details', entry)
 }
 
 </script>
@@ -235,6 +240,15 @@ function onRowKeydown(event: KeyboardEvent, entry: AccessLogEntry): void {
                   <dd class="min-w-0 break-all text-fg-secondary">{{ h.value }}</dd>
                 </div>
               </dl>
+              <div v-if="entry.details_available && entry.details_id" class="mt-2 border-t border-border/60 pt-2">
+                <button
+                  type="button"
+                  class="text-xs font-medium text-accent hover:text-accent-hover"
+                  @click.stop="viewDetails(entry)"
+                >
+                  View full request details
+                </button>
+              </div>
             </td>
           </tr>
         </template>

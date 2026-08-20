@@ -1,8 +1,10 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -53,7 +55,74 @@ func (reverseRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
 	if st == nil || st.entry == nil || st.entry.RoundTripper == nil {
 		return nil, errors.New("proxy: reverse call context missing transport")
 	}
-	return st.entry.RoundTripper.RoundTrip(req)
+	resp, err := st.entry.RoundTripper.RoundTrip(req)
+	if err != nil || resp == nil || resp.Body == nil {
+		return resp, err
+	}
+	if !isEventStream(resp.Header.Get("Content-Type")) {
+		return resp, nil
+	}
+	resp.Body = &sseCompletionTrackingBody{
+		ReadCloser:      resp.Body,
+		reachedTerminal: &st.sseTerminal,
+	}
+	return resp, nil
+}
+
+// sseCompletionTrackingBody recognizes semantic completion independently of
+// the HTTP body's EOF. OpenAI-compatible clients commonly close an SSE
+// connection as soon as they receive its terminal event.
+type sseCompletionTrackingBody struct {
+	io.ReadCloser
+	reachedTerminal *bool
+	line            [64]byte
+	lineLen         int
+	lineOverflow    bool
+}
+
+func (b *sseCompletionTrackingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 && !*b.reachedTerminal {
+		if b.scanLines(p[:n]) {
+			*b.reachedTerminal = true
+		}
+	}
+	if err == io.EOF && !*b.reachedTerminal && b.terminalLine() {
+		*b.reachedTerminal = true
+	}
+	return n, err
+}
+
+func (b *sseCompletionTrackingBody) scanLines(p []byte) bool {
+	for _, c := range p {
+		if c != '\n' {
+			if b.lineLen < len(b.line) {
+				b.line[b.lineLen] = c
+				b.lineLen++
+			} else {
+				b.lineOverflow = true
+			}
+			continue
+		}
+		if b.terminalLine() {
+			return true
+		}
+		b.lineLen = 0
+		b.lineOverflow = false
+	}
+	return false
+}
+
+func (b *sseCompletionTrackingBody) terminalLine() bool {
+	if b.lineOverflow {
+		return false
+	}
+	line := b.line[:b.lineLen]
+	if len(line) > 0 && line[len(line)-1] == '\r' {
+		line = line[:len(line)-1]
+	}
+	return bytes.Equal(line, []byte("data: [DONE]")) ||
+		bytes.Equal(line, []byte("event: response.completed"))
 }
 
 func (h *handler) reverseRewrite(pr *httputil.ProxyRequest) {
@@ -72,6 +141,9 @@ func (h *handler) reverseRewrite(pr *httputil.ProxyRequest) {
 		for _, k := range forwardHeaders {
 			pr.Out.Header.Del(k)
 		}
+		if st.details != nil {
+			st.details.SetOutbound(pr.Out)
+		}
 		return
 	}
 	// Transparency §9.3: never add X-Forwarded-*/Forwarded (so
@@ -87,6 +159,9 @@ func (h *handler) reverseRewrite(pr *httputil.ProxyRequest) {
 		if vals, ok := pr.In.Header[k]; ok {
 			pr.Out.Header[k] = slices.Clone(vals)
 		}
+	}
+	if st.details != nil {
+		st.details.SetOutbound(pr.Out)
 	}
 }
 
@@ -131,6 +206,13 @@ func newReverseProxy(h *handler, errorLog *log.Logger) *httputil.ReverseProxy {
 // contain upstream or proxy hosts) go to the app log only.
 func (h *handler) handleUpstreamError(rw *responseRecorder, r *http.Request, err error, st *requestState) {
 	status, class := classifyUpstreamError(err)
+	if st.sseTerminal && (class == errClientCanceled || errors.Is(r.Context().Err(), context.Canceled)) {
+		// The application-level stream completed; a client that closes
+		// immediately after the terminal SSE event must not turn that successful
+		// request into a cancellation entry.
+		st.errClass = ""
+		return
+	}
 	if class == errClientCanceled || errors.Is(r.Context().Err(), context.Canceled) {
 		// The client is gone: generate no response (§9.6) and skip
 		// Observe — neither a success nor an upstream failure.

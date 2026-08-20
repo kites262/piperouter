@@ -54,6 +54,22 @@ func Validate(c *Config, baseDir string) error {
 	if c.Runtime.RecentLogs != nil && *c.Runtime.RecentLogs < 0 {
 		add("runtime.recent_logs must be >= 0, got %d", *c.Runtime.RecentLogs)
 	}
+	rd := c.Runtime.RequestDetails
+	if rd.MaxBytes < 0 {
+		add("runtime.request_details.max_bytes must be >= 0, got %d", rd.MaxBytes)
+	}
+	if rd.MaxEntryBytes < 0 {
+		add("runtime.request_details.max_entry_bytes must be >= 0, got %d", rd.MaxEntryBytes)
+	}
+	if rd.BodyBytes < 0 {
+		add("runtime.request_details.body_bytes must be >= 0, got %d", rd.BodyBytes)
+	}
+	if rd.MaxBytes > 0 && rd.MaxEntryBytes > rd.MaxBytes {
+		add("runtime.request_details.max_entry_bytes must be <= max_bytes")
+	}
+	if rd.MaxEntryBytes > 0 && rd.BodyBytes > rd.MaxEntryBytes {
+		add("runtime.request_details.body_bytes must be <= max_entry_bytes")
+	}
 
 	// Negative network timeouts pass through to http.Transport as
 	// already-expired deadlines and silently break all forwarding

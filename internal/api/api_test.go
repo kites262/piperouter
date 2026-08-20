@@ -43,6 +43,7 @@ type testEnv struct {
 	manager *runtime.Manager
 	reg     *metrics.Registry
 	ring    *logging.Ring
+	details *logging.DetailsStore
 	cfgPath string
 }
 
@@ -61,11 +62,12 @@ func newTestEnv(t *testing.T, mutate ...func(*api.Deps)) *testEnv {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	env := &testEnv{manager: mgr, reg: reg, ring: logging.NewRing(64), cfgPath: cfgPath}
+	env := &testEnv{manager: mgr, reg: reg, ring: logging.NewRing(64), details: logging.NewDetailsStore(1<<20, 1<<20, 1<<20), cfgPath: cfgPath}
 	deps := api.Deps{
 		Manager: mgr,
 		Metrics: reg,
 		Ring:    env.ring,
+		Details: env.details,
 		Logger:  logger,
 		Version: "test-1.0",
 	}
@@ -73,6 +75,7 @@ func newTestEnv(t *testing.T, mutate ...func(*api.Deps)) *testEnv {
 		fn(&deps)
 	}
 	env.ring = deps.Ring
+	env.details = deps.Details
 	env.srv = httptest.NewServer(api.NewHandler(deps))
 	t.Cleanup(env.srv.Close)
 	return env
@@ -774,6 +777,20 @@ func TestLogsEndpoint(t *testing.T) {
 	assertError(t, resp, body, http.StatusBadRequest, "invalid_request")
 	resp, body = env.do(t, "GET", "/api/v1/logs?limit=abc", nil)
 	assertError(t, resp, body, http.StatusBadRequest, "invalid_request")
+}
+
+func TestDetailsCaptureAPI(t *testing.T) {
+	env := newTestEnv(t)
+	resp, body := env.do(t, "GET", "/api/v1/logs/details-capture", nil)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"enabled":false`) {
+		t.Fatalf("initial details state = %d %s", resp.StatusCode, body)
+	}
+	resp, body = env.do(t, "PUT", "/api/v1/logs/details-capture", map[string]bool{"enabled": true})
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"enabled":true`) {
+		t.Fatalf("updated details state = %d %s", resp.StatusCode, body)
+	}
+	resp, body = env.do(t, "GET", "/api/v1/logs/does-not-exist/details", nil)
+	assertError(t, resp, body, http.StatusNotFound, "not_found")
 }
 
 func TestLogsDisabledRing(t *testing.T) {

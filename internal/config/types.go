@@ -132,8 +132,18 @@ type WebConfig struct {
 }
 
 type RuntimeConfig struct {
-	LogLevel   string `yaml:"log_level" json:"log_level"`
-	RecentLogs *int   `yaml:"recent_logs" json:"recent_logs"`
+	LogLevel       string               `yaml:"log_level" json:"log_level"`
+	RecentLogs     *int                 `yaml:"recent_logs" json:"recent_logs"`
+	RequestDetails RequestDetailsConfig `yaml:"request_details" json:"request_details"`
+}
+
+// RequestDetailsConfig bounds the optional, in-memory request/response
+// capture used by the Logs diagnostics view. Capturing is runtime-controlled
+// through the admin API; these limits are persisted in the configuration.
+type RequestDetailsConfig struct {
+	MaxBytes      int64 `yaml:"max_bytes" json:"max_bytes"`
+	MaxEntryBytes int64 `yaml:"max_entry_bytes" json:"max_entry_bytes"`
+	BodyBytes     int64 `yaml:"body_bytes" json:"body_bytes"`
 }
 
 // NetworkConfig holds global outbound tuning (PRD §11.5). No overall
@@ -436,6 +446,15 @@ func (c *Config) Normalize() {
 	if c.Runtime.RecentLogs == nil {
 		c.Runtime.RecentLogs = intPtr(1000)
 	}
+	if c.Runtime.RequestDetails.MaxBytes == 0 {
+		c.Runtime.RequestDetails.MaxBytes = 64 << 20
+	}
+	if c.Runtime.RequestDetails.MaxEntryBytes == 0 {
+		c.Runtime.RequestDetails.MaxEntryBytes = 8 << 20
+	}
+	if c.Runtime.RequestDetails.BodyBytes == 0 {
+		c.Runtime.RequestDetails.BodyBytes = 256 << 10
+	}
 	if c.Network.DialTimeout == 0 {
 		c.Network.DialTimeout = Duration(10 * time.Second)
 	}
@@ -501,6 +520,7 @@ func (c *Config) Clone() *Config {
 	if c.Runtime.RecentLogs != nil {
 		out.Runtime.RecentLogs = intPtr(*c.Runtime.RecentLogs)
 	}
+	out.Runtime.RequestDetails = c.Runtime.RequestDetails
 	out.Transports = make([]TransportConfig, len(c.Transports))
 	copy(out.Transports, c.Transports)
 	out.Routes = make([]RouteConfig, len(c.Routes))

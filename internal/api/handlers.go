@@ -81,6 +81,17 @@ type logsResponse struct {
 	Capacity int                   `json:"capacity"`
 }
 
+type detailsCaptureResponse struct {
+	Enabled       bool  `json:"enabled"`
+	MaxBytes      int64 `json:"max_bytes"`
+	MaxEntryBytes int64 `json:"max_entry_bytes"`
+	BodyBytes     int64 `json:"body_bytes"`
+}
+
+type detailsCaptureRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 type routeUpsertRequest struct {
 	Revision string              `json:"revision"`
 	Route    *config.RouteConfig `json:"route"`
@@ -481,12 +492,62 @@ func (s *server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *server) handleDetailsCaptureGet(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Details == nil {
+		writeJSON(w, http.StatusOK, detailsCaptureResponse{})
+		return
+	}
+	m, e, b := s.deps.Details.Limits()
+	writeJSON(w, http.StatusOK, detailsCaptureResponse{Enabled: s.deps.Details.Enabled(), MaxBytes: m, MaxEntryBytes: e, BodyBytes: b})
+}
+
+func (s *server) handleDetailsCapturePut(w http.ResponseWriter, r *http.Request) {
+	var req detailsCaptureRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if s.deps.Details != nil {
+		s.deps.Details.SetEnabled(req.Enabled)
+	}
+	s.handleDetailsCaptureGet(w, r)
+}
+
+func (s *server) handleLogDetails(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Details == nil {
+		writeError(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	id := r.PathValue("id")
+	view, ok := s.deps.Details.View(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "details are no longer available")
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *server) handleLogDetailValue(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Details == nil {
+		writeError(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	value, ok := s.deps.Details.Value(r.PathValue("id"), r.PathValue("ref"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "value is no longer available")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"value": value})
+}
+
 // handleLogsClear empties the access-log ring buffer. Capacity and the
 // process-lifetime dropped counter are left untouched. Idempotent: clearing
 // an already-empty or disabled ring still returns 204.
 func (s *server) handleLogsClear(w http.ResponseWriter, r *http.Request) {
 	if s.deps.Ring != nil {
 		s.deps.Ring.Clear()
+	}
+	if s.deps.Details != nil {
+		s.deps.Details.Clear()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

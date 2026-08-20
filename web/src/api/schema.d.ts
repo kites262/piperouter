@@ -280,6 +280,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/logs/details-capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get request-details capture state */
+        get: operations["getDetailsCapture"];
+        /** Enable or disable request-details capture */
+        put: operations["setDetailsCapture"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/logs/{id}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one captured request and response */
+        get: operations["getLogDetails"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/logs/{id}/values/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one complete long-string value */
+        get: operations["getLogDetailValue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diagnostics/request": {
         parameters: {
             query?: never;
@@ -439,6 +491,25 @@ export interface components {
              * @default 1000
              */
             recent_logs: number | null;
+            request_details?: components["schemas"]["RequestDetailsConfig"];
+        };
+        /** @description Persisted memory limits for the temporary details recorder. */
+        RequestDetailsConfig: {
+            /**
+             * Format: int64
+             * @default 67108864
+             */
+            max_bytes: number;
+            /**
+             * Format: int64
+             * @default 8388608
+             */
+            max_entry_bytes: number;
+            /**
+             * Format: int64
+             * @default 262144
+             */
+            body_bytes: number;
         };
         /** @description Global outbound tuning. No overall request deadline exists so long-lived SSE streams are never cut off. */
         NetworkConfig: {
@@ -746,6 +817,10 @@ export interface components {
             streaming: "" | "sse" | "websocket";
             /** @description Error classification code (e.g. `upstream_timeout`); empty if none. */
             error: string;
+            /** @description Temporary captured-details identifier, when available. */
+            details_id?: string;
+            /** @description Whether the captured details are still in the byte-bounded store. */
+            details_available?: boolean;
             /** @description Proxy-metadata headers the client sent (Forwarded, Via, X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Proto), in stable order — recorded even when strip_forward_headers removes them from the forwarded request. Only headers actually present are listed; values are truncated to 256 characters. Omitted when the client sent none. */
             forward_headers?: {
                 /** @example X-Forwarded-For */
@@ -764,6 +839,52 @@ export interface components {
             dropped: number;
             /** @description Current ring-buffer capacity (0 = disabled). */
             capacity: number;
+        };
+        DetailsCaptureStatus: {
+            enabled: boolean;
+            /** Format: int64 */
+            max_bytes: number;
+            /** Format: int64 */
+            max_entry_bytes: number;
+            /** Format: int64 */
+            body_bytes: number;
+        };
+        DetailsCaptureRequest: {
+            enabled: boolean;
+        };
+        /** @description Captured request and response metadata and bounded bodies. */
+        LogDetails: {
+            id?: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            method?: string;
+            request_url?: string;
+            host?: string;
+            remote_addr?: string;
+            proto?: string;
+            request_headers?: {
+                [key: string]: string[];
+            };
+            request_body?: unknown;
+            request_body_bytes?: number;
+            request_body_truncated?: boolean;
+            route?: string;
+            transport?: string;
+            outbound_url?: string;
+            outbound_headers?: {
+                [key: string]: string[];
+            };
+            status?: number;
+            response_headers?: {
+                [key: string]: string[];
+            };
+            response_body?: unknown;
+            response_body_bytes?: number;
+            response_body_truncated?: boolean;
+            streaming?: string;
+            error?: string;
         };
         /** @description Inbound-request diagnostics: path is matched against the live route table exactly like the data plane. */
         RequestTestRequest: {
@@ -1394,6 +1515,98 @@ export interface operations {
                 content?: never;
             };
             403: components["responses"]["OriginNotAllowed"];
+        };
+    };
+    getDetailsCapture: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current temporary capture state and configured limits. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetailsCaptureStatus"];
+                };
+            };
+        };
+    };
+    setDetailsCapture: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DetailsCaptureRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated capture state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetailsCaptureStatus"];
+                };
+            };
+            403: components["responses"]["OriginNotAllowed"];
+        };
+    };
+    getLogDetails: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Captured details with long strings summarized. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogDetails"];
+                };
+            };
+        };
+    };
+    getLogDetailValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Complete value. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        value: string;
+                    };
+                };
+            };
         };
     };
     testRequest: {

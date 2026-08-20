@@ -52,15 +52,17 @@ type ForwardHeader struct {
 // query string; no header or body values are ever stored, except the
 // forward headers described on ForwardHeaders.
 type AccessEntry struct {
-	Time       time.Time `json:"time"`
-	Route      string    `json:"route"` // "" if unmatched
-	Method     string    `json:"method"`
-	Path       string    `json:"path"` // NO query string (§14.3)
-	Status     int       `json:"status"`
-	DurationMs float64   `json:"duration_ms"`
-	Transport  string    `json:"transport"`
-	Streaming  string    `json:"streaming"` // ""|"sse"|"websocket"
-	Error      string    `json:"error"`     // classification code, "" if none
+	Time             time.Time `json:"time"`
+	Route            string    `json:"route"` // "" if unmatched
+	Method           string    `json:"method"`
+	Path             string    `json:"path"` // NO query string (§14.3)
+	Status           int       `json:"status"`
+	DurationMs       float64   `json:"duration_ms"`
+	Transport        string    `json:"transport"`
+	Streaming        string    `json:"streaming"` // ""|"sse"|"websocket"
+	Error            string    `json:"error"`     // classification code, "" if none
+	DetailsID        string    `json:"details_id,omitempty"`
+	DetailsAvailable bool      `json:"details_available,omitempty"`
 	// ForwardHeaders holds the inbound forward headers when the client sent
 	// any — captured before strip_forward_headers removes them from the
 	// outbound request. Ring/WebUI only; LogAccess never emits them.
