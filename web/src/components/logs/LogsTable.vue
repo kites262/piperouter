@@ -2,7 +2,7 @@
      Built page-locally (tighter cells than the shared Table kit) with
      table-fixed columns so newly polled rows never cause horizontal jank.
      No artificial min-width — horizontal scroll only when content overflows.
-     Main columns: Time / IP / Route / Status / Duration / Path.
+     Main columns: Datetime / IP / Route / Status / Duration / Path.
      Method, Transport, Stream, Error, and forward headers live in a
      collapsible detail row so Path can use the remaining width on the right.
      IP column is derived from X-Forwarded-For when present. -->
@@ -66,15 +66,18 @@ function clientIp(entry: AccessLogEntry): string {
   return first
 }
 
-/** HH:MM:SS.mmm in the viewer's local time zone. */
-function formatTime(iso: string): string {
+/** YYYY-MM-DD HH:MM:SS.mmm in the viewer's local time zone. */
+function formatDateTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
+  const yyyy = String(d.getFullYear()).padStart(4, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   const ss = String(d.getSeconds()).padStart(2, '0')
   const ms = String(d.getMilliseconds()).padStart(3, '0')
-  return `${hh}:${mm}:${ss}.${ms}`
+  return `${yyyy}-${month}-${day} ${hh}:${mm}:${ss}.${ms}`
 }
 
 function formatDuration(ms: number): string {
@@ -129,7 +132,7 @@ function viewDetails(entry: AccessLogEntry): void {
     <table class="w-full table-fixed border-collapse font-mono text-xs">
       <colgroup>
         <col class="w-8" />
-        <col class="w-28" />
+        <col class="w-48" />
         <col class="w-36" />
         <col class="w-32" />
         <col class="w-14" />
@@ -139,7 +142,7 @@ function viewDetails(entry: AccessLogEntry): void {
       <thead class="border-b border-border">
         <tr>
           <th class="px-1 py-2"><span class="sr-only">Details</span></th>
-          <th class="px-3 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">Time</th>
+          <th class="px-3 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">Datetime</th>
           <th class="px-3 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">IP</th>
           <th class="px-3 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">Route</th>
           <th class="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wider text-fg-muted">Status</th>
@@ -167,7 +170,7 @@ function viewDetails(entry: AccessLogEntry): void {
                 aria-hidden="true"
               />
             </td>
-            <td class="whitespace-nowrap px-3 py-1.5 text-center text-fg-secondary">{{ formatTime(entry.time) }}</td>
+            <td class="whitespace-nowrap px-3 py-1.5 text-center text-fg-secondary">{{ formatDateTime(entry.time) }}</td>
             <td class="truncate px-3 py-1.5 text-center" :title="clientIp(entry) || undefined">
               <span v-if="clientIp(entry)" class="text-fg-secondary">{{ clientIp(entry) }}</span>
               <span v-else class="text-fg-muted">—</span>
