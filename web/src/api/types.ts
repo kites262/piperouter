@@ -95,6 +95,40 @@ export interface ProxyRouteOptions {
   strip_prefix: boolean
   /** Remove Forwarded/Via/X-Forwarded-* before forwarding (default true). */
   strip_forward_headers: boolean
+  /** Names of reusable JSON replacement rules. */
+  overwrites?: string[]
+}
+
+export interface OverwriteCondition {
+  phase: 'req'
+  path: string
+  op: 'eq'
+  value: string
+}
+
+export interface OverwriteAction {
+  phase: 'req'
+  path: string
+  op: 'set'
+  value: string
+}
+
+export interface OverwriteRule {
+  name: string
+  enabled: boolean
+  condition: OverwriteCondition
+  action: OverwriteAction
+  /** Legacy properties accepted when reading earlier configurations. */
+  phase?: 'req'
+  path?: string
+  field?: string
+  from?: string
+  to?: string
+}
+
+export interface OverwriteConfig {
+  enabled: boolean
+  rules: OverwriteRule[]
 }
 
 /** Options block of a static route (type "static"). */
@@ -140,6 +174,7 @@ export interface Config {
   network: NetworkConfig
   transports: TransportConfig[]
   routes: RouteConfig[]
+  overwrite?: OverwriteConfig
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +405,8 @@ export interface RequestTestRequest {
   /** Full inbound path (must start with `/`; empty → `/`). */
   path?: string
   method?: string
+  body?: string
+  headers?: Record<string, string>
 }
 
 /** POST /api/v1/diagnostics/route request body. Method defaults to GET. */
@@ -398,6 +435,8 @@ export interface DiagnosticsResult {
   error: string
   header_duration_ms: number
   total_duration_ms: number
+  request_body?: string
+  body_changed?: boolean
 }
 
 // ---------------------------------------------------------------------------

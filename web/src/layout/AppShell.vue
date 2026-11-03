@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Moon,
   Route as RouteIcon,
+  Replace,
   ScrollText,
   Settings,
   Shield,
@@ -33,6 +34,7 @@ const { theme, toggle: toggleTheme } = useTheme()
 const primaryNav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/routes', label: 'Routes', icon: RouteIcon },
+  { to: '/overwrites', label: 'Overwrite', icon: Replace },
   { to: '/transports', label: 'Transports', icon: Cable },
   { to: '/logs', label: 'Logs', icon: ScrollText },
   { to: '/diagnostics', label: 'Diagnostics', icon: Activity },

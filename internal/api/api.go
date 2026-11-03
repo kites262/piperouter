@@ -7,7 +7,8 @@
 // conservative security headers on every response. Errors use the
 // envelope {"error":code,"detail":...,"issues":[...]} ("issues" only for
 // validation_failed). Nothing sensitive — bodies, query strings, header
-// values, proxy URLs — is ever echoed to clients or logs.
+// values, proxy URLs — is ever written to logs. Diagnostics may return the
+// caller-supplied outbound body to that caller for inspection.
 package api
 
 import (

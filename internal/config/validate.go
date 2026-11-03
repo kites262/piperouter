@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // ValidationError aggregates every problem found in a configuration so a
@@ -137,6 +138,52 @@ func Validate(c *Config, baseDir string) error {
 		}
 	}
 
+	knownOverwrites := make(map[string]OverwriteRule, len(c.Overwrite.Rules))
+	overwriteConditions := make(map[string][5]string, len(c.Overwrite.Rules))
+	for i, rule := range c.Overwrite.Rules {
+		ref := fmt.Sprintf("overwrite.rules[%d] (name %q)", i, rule.Name)
+		if !nameRE.MatchString(rule.Name) {
+			add("%s: name must match %s", ref, NamePattern)
+		}
+		if _, exists := knownOverwrites[rule.Name]; exists {
+			add("%s: duplicate overwrite rule name", ref)
+		}
+		knownOverwrites[rule.Name] = rule
+		condition, action := rule.EffectiveCondition(), rule.EffectiveAction()
+		if condition.Phase != "req" {
+			add("%s: condition phase %q is not supported (only req is available)", ref, condition.Phase)
+		}
+		if action.Phase != "req" {
+			add("%s: action phase %q is not supported (only req is available)", ref, action.Phase)
+		}
+		if !rule.legacyPhaseMatches() {
+			add("%s: legacy phase conflicts with condition/action phases", ref)
+		}
+		conditionTokens, conditionErr := ParseOverwritePath(condition.Path)
+		if conditionErr != nil {
+			add("%s: condition %s", ref, conditionErr)
+		}
+		actionTokens, actionErr := ParseOverwritePath(action.Path)
+		if actionErr != nil {
+			add("%s: action %s", ref, actionErr)
+		}
+		if condition.Op != "eq" {
+			add("%s: condition op %q is not supported (must be eq)", ref, condition.Op)
+		}
+		if action.Op != "set" {
+			add("%s: action op %q is not supported (must be set)", ref, action.Op)
+		}
+		if !utf8.ValidString(condition.Value) || !utf8.ValidString(action.Value) || !utf8.ValidString(rule.Field) || !utf8.ValidString(rule.From) || !utf8.ValidString(rule.To) {
+			add("%s: values and legacy field must be valid UTF-8 strings", ref)
+		}
+		if !rule.legacyMatches() {
+			add("%s: condition/action and legacy fields refer to different values", ref)
+		}
+		if conditionErr == nil && actionErr == nil {
+			overwriteConditions[rule.Name] = [5]string{condition.Phase, canonicalOverwritePath(conditionTokens), condition.Value, action.Phase, canonicalOverwritePath(actionTokens)}
+		}
+	}
+
 	seenRouteNames := map[string]bool{}
 	seenPrefixes := map[string]bool{}
 	for i, r := range c.Routes {
@@ -172,6 +219,26 @@ func Validate(c *Config, baseDir string) error {
 			if r.Proxy == nil {
 				add("%s: missing options (proxy routes need options.target)", ref)
 				break
+			}
+			seenBindings := map[string]bool{}
+			seenConditions := map[[5]string]string{}
+			for _, name := range r.Proxy.Overwrites {
+				if seenBindings[name] {
+					add("%s: duplicate overwrite binding %q", ref, name)
+				}
+				seenBindings[name] = true
+				rule, exists := knownOverwrites[name]
+				if !exists {
+					add("%s: references unknown overwrite rule %q", ref, name)
+					continue
+				}
+				if rule.Enabled {
+					key := overwriteConditions[rule.Name]
+					if previous, exists := seenConditions[key]; exists && previous != name {
+						add("%s: overwrite rules %q and %q have duplicate path/from conditions", ref, previous, name)
+					}
+					seenConditions[key] = name
+				}
 			}
 			for _, msg := range targetIssues(r.Proxy.Target) {
 				add("%s: %s", ref, msg)

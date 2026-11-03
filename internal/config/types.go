@@ -103,6 +103,42 @@ type Config struct {
 	Network    NetworkConfig     `yaml:"network" json:"network"`
 	Transports []TransportConfig `yaml:"transports" json:"transports"`
 	Routes     []RouteConfig     `yaml:"routes" json:"routes"`
+	Overwrite  OverwriteConfig   `yaml:"overwrite" json:"overwrite"`
+}
+
+// OverwriteConfig enables reusable JSON string replacements.
+// The zero value disables processing, preserving existing forwarding behavior.
+type OverwriteConfig struct {
+	Enabled bool            `yaml:"enabled" json:"enabled"`
+	Rules   []OverwriteRule `yaml:"rules" json:"rules"`
+}
+
+// OverwriteRule applies an action when a condition matches the original JSON.
+type OverwriteRule struct {
+	Name      string             `yaml:"name" json:"name"`
+	Enabled   bool               `yaml:"enabled" json:"enabled"`
+	Phase     string             `yaml:"phase,omitempty" json:"phase,omitempty"` // legacy shared phase
+	Condition OverwriteCondition `yaml:"condition" json:"condition"`
+	Action    OverwriteAction    `yaml:"action" json:"action"`
+	// Legacy forms are accepted during migration and omitted after normalization.
+	Path  string `yaml:"path,omitempty" json:"path,omitempty"`
+	Field string `yaml:"field,omitempty" json:"field,omitempty"`
+	From  string `yaml:"from,omitempty" json:"from,omitempty"`
+	To    string `yaml:"to,omitempty" json:"to,omitempty"`
+}
+
+type OverwriteCondition struct {
+	Phase string `yaml:"phase" json:"phase"`
+	Path  string `yaml:"path" json:"path"`
+	Op    string `yaml:"op" json:"op"`
+	Value string `yaml:"value" json:"value"`
+}
+
+type OverwriteAction struct {
+	Phase string `yaml:"phase" json:"phase"`
+	Path  string `yaml:"path" json:"path"`
+	Op    string `yaml:"op" json:"op"`
+	Value string `yaml:"value" json:"value"`
 }
 
 type ServerConfig struct {
@@ -222,6 +258,8 @@ type RouteConfig struct {
 type ProxyOptions struct {
 	// Target is an absolute http/https URL (no userinfo, query or fragment).
 	Target string `yaml:"target" json:"target"`
+	// Overwrites references reusable rules; conditions always match original values.
+	Overwrites []string `yaml:"overwrites" json:"overwrites"`
 	// Transport is the egress link. Default "direct".
 	Transport string `yaml:"transport" json:"transport"`
 	// StripPrefix removes the matched prefix before joining with the target
@@ -428,6 +466,9 @@ func Default() *Config {
 // pointer fields are non-nil afterwards. It is idempotent and must be called
 // after Parse and before Validate/Build.
 func (c *Config) Normalize() {
+	for i := range c.Overwrite.Rules {
+		c.Overwrite.Rules[i].normalize()
+	}
 	if c.Server.Proxy.Listen == "" {
 		c.Server.Proxy.Listen = ":8080"
 	}
@@ -521,6 +562,7 @@ func (c *Config) Clone() *Config {
 		out.Runtime.RecentLogs = intPtr(*c.Runtime.RecentLogs)
 	}
 	out.Runtime.RequestDetails = c.Runtime.RequestDetails
+	out.Overwrite.Rules = append([]OverwriteRule(nil), c.Overwrite.Rules...)
 	out.Transports = make([]TransportConfig, len(c.Transports))
 	copy(out.Transports, c.Transports)
 	out.Routes = make([]RouteConfig, len(c.Routes))
@@ -530,6 +572,7 @@ func (c *Config) Clone() *Config {
 		}
 		if r.Proxy != nil {
 			p := *r.Proxy
+			p.Overwrites = append([]string(nil), r.Proxy.Overwrites...)
 			if p.StripPrefix != nil {
 				p.StripPrefix = boolPtr(*p.StripPrefix)
 			}

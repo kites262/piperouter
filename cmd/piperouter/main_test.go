@@ -56,7 +56,7 @@ func TestRun(t *testing.T) {
 			name:       "version subcommand",
 			args:       []string{"version"},
 			wantCode:   0,
-			wantStdout: []string{"piperouter", "0.4.0-dev", "go1."},
+			wantStdout: []string{"piperouter", version, "go1."},
 		},
 		{
 			name:       "validate valid config",

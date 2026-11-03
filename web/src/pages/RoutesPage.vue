@@ -9,12 +9,11 @@ import {
   deleteRoute,
   getConfig,
   getMetrics,
-  listRoutes,
   listTransports,
   updateRoute,
 } from '@/api/client'
 import { routeDestination, routeTransport } from '@/api/types'
-import type { RouteConfig, RouteMetrics, TransportConfig } from '@/api/types'
+import type { OverwriteRule, RouteConfig, RouteMetrics, TransportConfig } from '@/api/types'
 import RouteFormDialog from '@/components/routes/RouteFormDialog.vue'
 import RouteTestDialog from '@/components/routes/RouteTestDialog.vue'
 import Badge from '@/components/ui/Badge.vue'
@@ -39,6 +38,7 @@ const toast = useToast()
 
 const routes = ref<RouteConfig[] | null>(null)
 const transports = ref<TransportConfig[]>([])
+const overwriteRules = ref<OverwriteRule[]>([])
 const revision = ref('')
 const loadError = ref('')
 const metricsByName = ref<Map<string, RouteMetrics>>(new Map())
@@ -51,14 +51,15 @@ function errMessage(err: unknown): string {
 
 async function loadAll(): Promise<void> {
   try {
-    const [routeList, transportList, envelope] = await Promise.all([
-      listRoutes(),
+    const [transportList, envelope] = await Promise.all([
       listTransports(),
       getConfig(),
     ])
-    routes.value = routeList
+    // Route contents and revision must come from the same snapshot.
+    routes.value = envelope.config.routes
     transports.value = transportList
     revision.value = envelope.revision
+    overwriteRules.value = envelope.config.overwrite?.rules ?? []
     loadError.value = ''
   } catch (err) {
     const message = errMessage(err)
@@ -469,6 +470,7 @@ function goDetail(name: string): void {
       :route="editingRoute"
       :routes="routes ?? []"
       :transports="transports"
+      :overwrite-rules="overwriteRules"
       :revision="revision"
       @saved="() => void loadAll()"
       @reload="() => void loadAll()"

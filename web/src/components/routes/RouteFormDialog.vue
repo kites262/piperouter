@@ -3,7 +3,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 
 import { ApiError, createRoute, updateRoute } from '@/api/client'
-import type { RouteConfig, TransportConfig } from '@/api/types'
+import { overwriteRuleSummary } from '@/api/overwrite'
+import type { OverwriteRule, RouteConfig, TransportConfig } from '@/api/types'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import Input from '@/components/ui/Input.vue'
@@ -30,6 +31,7 @@ const props = defineProps<{
   routes: RouteConfig[]
   /** Available transports (includes built-in "direct"). */
   transports: TransportConfig[]
+  overwriteRules?: OverwriteRule[]
   /** Current config revision (optimistic concurrency, 409 on mismatch). */
   revision: string
 }>()
@@ -50,6 +52,7 @@ const form = reactive({
   stripPrefix: true,
   stripForwardHeaders: true,
   transport: 'direct',
+  overwrites: [] as string[],
 })
 
 const touched = reactive<Record<FieldName, boolean>>({
@@ -77,6 +80,7 @@ watch(open, (isOpen) => {
   form.type = source?.type === 'static' ? 'static' : 'proxy'
   form.prefix = source?.prefix ?? ''
   form.match = source?.match === 'exact' ? 'exact' : 'prefix'
+  form.overwrites = source?.type === 'proxy' ? [...(source.options.overwrites ?? [])] : []
   if (source?.type === 'static') {
     form.target = source.options.file
     form.stripPrefix = true
@@ -153,6 +157,7 @@ const preview = computed(() =>
 
 function onReloadClick(): void {
   conflict.value = false
+  open.value = false
   emit('reload')
 }
 
@@ -185,6 +190,7 @@ async function submit(): Promise<void> {
             transport: form.transport,
             strip_prefix: form.stripPrefix,
             strip_forward_headers: form.stripForwardHeaders,
+            overwrites: [...form.overwrites],
           },
         }
 
@@ -332,6 +338,18 @@ async function submit(): Promise<void> {
         </span>
       </label>
 
+      <fieldset v-if="!isStatic" class="space-y-2">
+        <legend class="text-xs font-medium text-fg-secondary">Overwrite rules</legend>
+        <div v-if="overwriteRules?.length" class="max-h-36 space-y-2 overflow-y-auto rounded-md border border-border p-3">
+          <label v-for="rule in overwriteRules" :key="rule.name" class="flex items-center gap-2 text-sm text-fg-secondary">
+            <input v-model="form.overwrites" type="checkbox" :value="rule.name" class="accent-accent" />
+            <span class="font-mono">{{ rule.name }}</span>
+            <span class="break-all text-xs text-fg-muted">{{ overwriteRuleSummary(rule) }}<template v-if="!rule.enabled"> · disabled</template></span>
+          </label>
+        </div>
+        <p class="text-xs text-fg-muted">Manage replacements and the global switch on the Overwrite page.</p>
+      </fieldset>
+
       <!-- Switches -->
       <div class="grid gap-3 sm:grid-cols-2">
         <div class="flex items-center justify-between gap-3 rounded-md border border-border bg-bg-deep/40 px-3 py-2.5">
@@ -394,10 +412,10 @@ async function submit(): Promise<void> {
         class="flex items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning-soft p-3"
       >
         <p class="text-xs text-warning">
-          The configuration changed while you were editing. Reload the latest config, then save
-          again.
+          The configuration changed while you were editing. Reload and reopen the route to edit
+          the latest configuration. This closes the current draft.
         </p>
-        <Button size="sm" variant="outline" @click="onReloadClick">Reload</Button>
+        <Button size="sm" variant="outline" @click="onReloadClick">Reload and close draft</Button>
       </div>
 
       <!-- Other server errors -->

@@ -20,8 +20,8 @@
 
 Point one hostname at PipeRouter and fan it out to as many upstreams as you like — each reached over
 its own network path. It matches every request by path prefix, rewrites it onto the target, and
-forwards it transparently. It never reads your bodies or touches your API keys; callers send
-credentials straight through to the upstream.
+forwards it transparently by default. Optional Overwrite rules replace JSON string values
+at selected paths, such as LLM model aliases. API keys pass straight through to the upstream.
 
 Configure it in one YAML file or from the built-in web console, and reload live — no restarts.
 
@@ -36,7 +36,8 @@ Request ─▶ Match prefix ─▶ Rewrite path ─▶ Pick transport ─▶ For
 | 🎯 **Prefix routing** | Longest-prefix match on segment boundaries — `/openai` matches `/openai/models`, never `/openai2`. Order in the file never matters. |
 | ✂️ **Path rewrite** | Strip or keep the matched prefix, join with the target path. Query strings and percent-encoding (`%2F`, spaces) pass through byte-for-byte. |
 | 🔀 **Per-route egress** | Send each route out `direct`, through an `http` proxy (CONNECT for HTTPS), or over `socks5` — with pooled, reused connections. |
-| 🌊 **Streaming first** | SSE and WebSocket just work. Bodies stream both ways, never buffered — gigabyte uploads and hour-long event streams are fine. |
+| 🌊 **Streaming first** | Responses, including SSE, stream immediately; WebSocket upgrades are preserved. Requests stream unless an enabled Overwrite rule requires bounded JSON buffering. |
+| ✏️ **JSON Overwrite** | Reusable, opt-in string replacements by JSON path — map `.model` aliases and bind rules to selected routes. Off by default, with live rule updates. |
 | ♻️ **Live reload** | Edit the YAML or use the console; changes apply atomically, mid-flight requests and open streams never drop. Bad config? It keeps serving the last good one. |
 | 🖥️ **Built-in console** | A Vue 3 web UI — dashboard, route/transport editors, live logs and diagnostics — served straight from the binary (dark & light). |
 | 📦 **Single binary** | One ~8 MB Go binary with the frontend embedded. Drop it on a box and run. No Node, no nginx, no sidecars. |
@@ -44,7 +45,8 @@ Request ─▶ Match prefix ─▶ Rewrite path ─▶ Pick transport ─▶ For
 
 ## ⚡ Fast and quiet
 
-The data plane is allocation-light and never buffers a body. On an Apple M1 against a local upstream:
+With Overwrite disabled, the data plane is allocation-light and does not buffer request bodies.
+The following baseline measurements were taken on an Apple M1 against a local upstream:
 
 - **sub-millisecond** overhead (~47 µs median added latency per request)
 - **~2.4 GB/s** streamed throughput
@@ -122,8 +124,9 @@ remembered, first visit follows your OS).
 | **Routes** | List, create, edit, enable/disable, delete and test routes. The editor validates live and previews the final URL mapping before you save. |
 | **Route detail** | The pipeline (prefix → rewrite → transport → target) plus per-route counts, error rate, P50/P95/P99 latency and recent requests. |
 | **Transports** | Manage HTTP/SOCKS5 proxies and see which routes use each. |
+| **Overwrite** | Create JSON path string replacement rules with a phase for each condition and action, and bind rules to proxy routes. Currently supports Req (request body). |
 | **Logs** | The recent-request log, filterable by route and status class, with one-click clear of the memory buffer. Bodies and sensitive headers are never recorded. |
-| **Diagnostics** | Send a test request through a real route or transport and watch every stage: resolution, URL, connection, TLS, status, timing. |
+| **Diagnostics** | Send a test request, including POST JSON and headers, through a real route. Inspect the outbound body and watch resolution, URL, connection, TLS, status and timing. |
 | **Settings** | Listeners, TLS, log level and log-buffer capacity. |
 
 Everything the UI does goes through the JSON API under `/api/v1`
@@ -167,6 +170,7 @@ The `Host` header is set to the target host. Connection failures map to `502`, h
 | `target` | string | yes | — | `proxy`: absolute `http`/`https` URL; `static`: path to a **file** (absolute, or relative to the config file's directory) |
 | `strip_prefix` | bool | no | `true` | `proxy` only: remove the matched prefix before joining the target path |
 | `transport` | string | no | `direct` | `proxy` only: outbound transport to use |
+| `overwrites` | string[] | no | `[]` | `proxy` only, inside `options`: names of reusable Overwrite rules |
 
 **Transport** — one outbound link:
 
@@ -178,6 +182,57 @@ The `Host` header is set to the target host. Connection failures map to `502`, h
 
 The built-in `direct` transport always exists and must not be declared. Global sections cover
 listeners, optional proxy TLS, log level and outbound timeouts.
+
+## ✏️ LLM model aliases with Overwrite
+
+In the **Overwrite** sidebar page, create a rule. Set its condition to **Req**, JSON path
+`.model` equal to `gpt-6.1-sol`, and its action to **Req**, setting `.model` to `gpt-6.1-sol-1`.
+Then select the proxy routes to bind.
+Enable both the rule and the global switch to apply it; both default to off.
+The equivalent YAML is:
+
+```yaml
+overwrite:
+  enabled: true
+  rules:
+    - name: model-alias
+      enabled: true
+      condition:
+        phase: req
+        path: .model
+        op: eq
+        value: gpt-6.1-sol
+      action:
+        phase: req
+        path: .model
+        op: set
+        value: gpt-6.1-sol-1
+
+routes:
+  - name: openai
+    prefix: /openai
+    options:
+      target: https://api.openai.com/v1
+      overwrites: [model-alias]
+```
+
+Condition and action each specify a phase, defaulting to `req`; currently only `req` is
+supported. The first `.` represents the complete body in that phase. Paths can address
+nested objects and array elements, for example `.reasoning.effort` and `.messages[0].model`; `.model` is the
+editor default. Condition and action paths are independent: a match on `.model` can also
+set another existing string field. Conditions compare exact strings, and actions change
+existing strings only. Missing paths and other value types pass through. All conditions
+read the original request, so replacements do not trigger further matches. Use
+**Diagnostics** to send a POST JSON request with headers and inspect its **Outbound body**.
+Rule changes and route bindings hot-reload atomically; existing SSE streams continue
+uninterrupted.
+
+An active binding buffers JSON request bodies before forwarding, even when no value matches.
+Input and output are limited to 8 MiB each, reads to 30 seconds, and Body processing to eight
+concurrent requests. This can increase time to first token for long or slow uploads; SSE
+responses still stream chunk by chunk. Requests without bodies and WebSocket upgrades bypass
+Overwrite. See [the full semantics and errors](docs/configuration.md#overwrite) before binding
+routes that also accept uploads or non-JSON payloads.
 
 ## 🔒 Security
 

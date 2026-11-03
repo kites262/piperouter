@@ -348,6 +348,16 @@ function statusVariant(status: number): 'success' | 'accent' | 'warning' | 'dang
         </p>
       </Card>
 
+      <Card v-if="routeCfg.type === 'proxy'" glass title="Overwrite">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap gap-2">
+            <Badge v-for="rule in routeCfg.options.overwrites ?? []" :key="rule" variant="accent">{{ rule }}</Badge>
+            <span v-if="!routeCfg.options.overwrites?.length" class="text-sm text-fg-muted">No overwrite rules bound.</span>
+          </div>
+          <RouterLink to="/overwrites" class="text-xs text-accent hover:underline">Manage rules and bindings</RouterLink>
+        </div>
+      </Card>
+
       <section class="animate-fade-up stagger-3">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-sm font-semibold tracking-tight text-fg">Live metrics</h2>

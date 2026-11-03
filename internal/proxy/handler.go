@@ -1,5 +1,5 @@
 // Package proxy implements the PipeRouter data plane (PRD §9, §10, §20.1):
-// match → rewrite → forward with full streaming (no body buffering ever),
+// match → rewrite → forward, with optional bounded JSON overwrite buffering,
 // SSE awareness, WebSocket tunneling, transparent header handling and
 // bounded error mapping. A panic in a single request never brings the
 // process down (§22.3).
@@ -51,12 +51,13 @@ func NewHandler(sp SnapshotProvider, reg *metrics.Registry, ring *logging.Ring, 
 		detailStore = detailStores[0]
 	}
 	h := &handler{
-		sp:      sp,
-		reg:     reg,
-		ring:    ring,
-		details: detailStore,
-		logger:  logger,
-		tunnels: map[uint64]func(){},
+		sp:             sp,
+		reg:            reg,
+		ring:           ring,
+		details:        detailStore,
+		logger:         logger,
+		tunnels:        map[uint64]func(){},
+		overwriteSlots: make(chan struct{}, maxConcurrentOverwrites),
 	}
 	// Shared across all plain HTTP reverse-proxy requests: avoids per-request
 	// ReverseProxy + log.New allocation. Concurrent ServeHTTP is safe.
@@ -74,8 +75,9 @@ type handler struct {
 
 	// reverse is the process-lifetime ReverseProxy; reverseCall rides on
 	// request context. errorLog is its ErrorLog (also process-lifetime).
-	reverse  *httputil.ReverseProxy
-	errorLog *log.Logger
+	reverse        *httputil.ReverseProxy
+	errorLog       *log.Logger
+	overwriteSlots chan struct{}
 
 	// Active WebSocket tunnels, tracked so shutdown can drain then force
 	// close them (they are hijacked, so net/http.Server cannot). tunnelWG
@@ -140,15 +142,17 @@ func (h *handler) DrainWebSockets(ctx context.Context) {
 // shared ReverseProxy callbacks can recover them from context without a
 // second heap object.
 type requestState struct {
-	routeName     string
-	transportName string
-	path          string                // escaped path, never includes the query (§14.3)
-	streaming     metrics.StreamKind    // final stream kind, also used by handle.Done
-	errClass      string                // classification code for the access entry
-	handle        *metrics.ActiveHandle // non-nil once the active gauges were incremented
-	skipObserve   bool                  // client canceled: no Observe (§9.6)
-	sseTerminal   bool                  // an OpenAI-compatible SSE terminal marker was received
-	details       *logging.Capture
+	routeName         string
+	transportName     string
+	path              string                // escaped path, never includes the query (§14.3)
+	streaming         metrics.StreamKind    // final stream kind, also used by handle.Done
+	errClass          string                // classification code for the access entry
+	handle            *metrics.ActiveHandle // non-nil once the active gauges were incremented
+	skipObserve       bool                  // client canceled: no Observe (§9.6)
+	sseTerminal       bool                  // an OpenAI-compatible SSE terminal marker was received
+	details           *logging.Capture
+	overwriteBuffered bool
+	overwriteChanged  bool
 
 	// Populated only for serveReverse; read by shared ReverseProxy hooks.
 	route *router.Route
@@ -226,6 +230,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	st.handle = h.reg.IncActive(route.Name, metrics.StreamNone)
+	if route.Overwrite != nil && r.ContentLength != 0 && r.Body != nil && r.Body != http.NoBody {
+		prepared, cleanup, ok := h.prepareOverwrite(rw, r, route, st)
+		if !ok {
+			return
+		}
+		defer cleanup()
+		r = prepared
+	}
 	h.serveReverse(rw, r, route, entry, st)
 }
 

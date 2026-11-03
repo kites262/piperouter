@@ -28,6 +28,12 @@ export const router = createRouter({
       meta: { title: 'Route Detail' },
     },
     {
+      path: '/overwrites',
+      name: 'overwrites',
+      component: () => import('@/pages/OverwritesPage.vue'),
+      meta: { title: 'Overwrite' },
+    },
+    {
       path: '/transports',
       name: 'transports',
       component: () => import('@/pages/TransportsPage.vue'),

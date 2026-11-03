@@ -9,16 +9,18 @@
 // Each probe uses the real pipeline pieces (route table rewrite, transport
 // pool RoundTripper) with a bounded overall timeout, no redirect following,
 // and at most 64 KiB of the response body read and discarded. Bodies and
-// authentication header values are never stored or logged; proxy URLs are
-// redacted from error messages.
+// authentication header values are never logged or persisted. Diagnostics may
+// return the caller's outbound body for inspection; proxy URLs are redacted.
 package diagnostics
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -51,10 +53,12 @@ const (
 // against the live route table exactly like the data plane (longest-prefix,
 // path-segment boundary). Path must be empty or start with "/"; empty is
 // treated as "/". Method defaults to GET; only GET, HEAD and POST are
-// allowed. Probes never carry a request body (PRD §16.1).
+// allowed. An optional JSON body and request headers exercise active rules.
 type RequestTest struct {
-	Path   string `json:"path"`
-	Method string `json:"method"`
+	Path    string            `json:"path"`
+	Method  string            `json:"method"`
+	Body    string            `json:"body,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // RouteTest asks for a probe of a configured route by name. Path is an
@@ -89,6 +93,8 @@ type Result struct {
 	Error            string  `json:"error"`       // sanitized message, "" on success
 	HeaderDurationMs float64 `json:"header_duration_ms"`
 	TotalDurationMs  float64 `json:"total_duration_ms"`
+	RequestBody      *string `json:"request_body,omitempty"`
+	BodyChanged      bool    `json:"body_changed,omitempty"`
 }
 
 // AllowedMethod reports whether m may be used for a probe: empty
@@ -140,7 +146,56 @@ func TestRequest(ctx context.Context, snap *runtime.Snapshot, t RequestTest) Res
 	if route == nil {
 		return resolveFailure("", "", "", "no route matched")
 	}
-	return probeRoute(ctx, snap, route, method, reqURL)
+	if t.Body != "" && method != http.MethodPost {
+		return resolveFailure(route.Name, "", route.TransportName, "a request body requires POST")
+	}
+	seenHeaders := make(map[string]bool, len(t.Headers))
+	for name, value := range t.Headers {
+		if !validHeader(name, value) {
+			return resolveFailure(route.Name, "", route.TransportName, "invalid request header")
+		}
+		canonical := http.CanonicalHeaderKey(name)
+		if seenHeaders[canonical] {
+			return resolveFailure(route.Name, "", route.TransportName, "duplicate request header")
+		}
+		seenHeaders[canonical] = true
+		switch http.CanonicalHeaderKey(name) {
+		case "Host", "Content-Length", "Transfer-Encoding", "Connection", "Proxy-Connection", "Upgrade", "Trailer", "Te", "Proxy-Authorization", "Proxy-Authenticate":
+			return resolveFailure(route.Name, "", route.TransportName, "protocol-managed headers cannot be set")
+		}
+	}
+	if t.Body != "" {
+		for name, value := range t.Headers {
+			if strings.EqualFold(name, "Content-Encoding") && value != "" && !strings.EqualFold(strings.TrimSpace(value), "identity") {
+				return resolveFailure(route.Name, "", route.TransportName, "JSON body must not be content-encoded")
+			}
+			if strings.EqualFold(name, "Content-Type") {
+				media, _, err := mime.ParseMediaType(value)
+				media = strings.ToLower(media)
+				if err != nil || !(media == "application/json" || strings.HasPrefix(media, "application/") && strings.HasSuffix(media, "+json")) {
+					return resolveFailure(route.Name, "", route.TransportName, "body requires a JSON content type")
+				}
+			}
+		}
+	}
+	return probeRoute(ctx, snap, route, method, reqURL, t)
+}
+
+func validHeader(name, value string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range []byte(name) {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", rune(c))) {
+			return false
+		}
+	}
+	for _, c := range []byte(value) {
+		if c < 32 && c != '\t' || c == 127 {
+			return false
+		}
+	}
+	return true
 }
 
 // TestRoute probes a route end-to-end: it resolves the ENABLED route by
@@ -228,7 +283,7 @@ func requestURL(escapedPath string) (*url.URL, error) {
 	return u, nil
 }
 
-func probeRoute(ctx context.Context, snap *runtime.Snapshot, route *router.Route, method string, reqURL *url.URL) Result {
+func probeRoute(ctx context.Context, snap *runtime.Snapshot, route *router.Route, method string, reqURL *url.URL, inputs ...RequestTest) Result {
 	if route.IsStatic() {
 		return probeStatic(route)
 	}
@@ -238,8 +293,44 @@ func probeRoute(ctx context.Context, snap *runtime.Snapshot, route *router.Route
 		return resolveFailure(route.Name, target.String(), route.TransportName,
 			fmt.Sprintf("transport %q not found", route.TransportName))
 	}
-	res := probe(ctx, entry, method, target)
+	input := RequestTest{}
+	if len(inputs) > 0 {
+		input = inputs[0]
+	}
+	body := []byte(input.Body)
+	if len(body) > 0 && route.Overwrite != nil {
+		var err error
+		body, err = route.Overwrite.Replace(body)
+		if err != nil {
+			return resolveFailure(route.Name, target.String(), route.TransportName, "request body could not be processed by Overwrite")
+		}
+	}
+	// Match the ordinary proxy's header behavior for supplied diagnostics headers.
+	headers := make(http.Header)
+	for name, value := range input.Headers {
+		headers.Set(name, value)
+	}
+	if len(body) > 0 && headers.Get("Content-Type") == "" {
+		headers.Set("Content-Type", "application/json")
+	}
+	if route.StripForwardHeaders {
+		for _, name := range []string{"Forwarded", "Via", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+			headers.Del(name)
+		}
+	}
+	changed := !bytes.Equal(body, []byte(input.Body))
+	if changed {
+		for _, name := range []string{"Content-MD5", "Digest", "Content-Digest", "Repr-Digest"} {
+			headers.Del(name)
+		}
+	}
+	res := probe(ctx, entry, method, target, probeInput{body: body, headers: headers})
 	res.Route = route.Name
+	if input.Body != "" {
+		text := string(body)
+		res.RequestBody = &text
+		res.BodyChanged = changed
+	}
 	return res
 }
 
@@ -313,10 +404,14 @@ func (s *traceState) firstByteTime() time.Time {
 	return s.firstByte
 }
 
-// probe sends one bodyless request for target through entry, never
-// following redirects, and drains at most maxBodyRead of the response.
-// Callers that know a route name set Result.Route after probe returns.
-func probe(ctx context.Context, entry *transport.Entry, method string, target *url.URL) Result {
+type probeInput struct {
+	body    []byte
+	headers http.Header
+}
+
+// probe sends a request through entry without following redirects, and drains
+// at most maxBodyRead of the response. Request bodies are never logged.
+func probe(ctx context.Context, entry *transport.Entry, method string, target *url.URL, inputs ...probeInput) Result {
 	res := Result{TargetURL: target.String(), Transport: entry.Name}
 
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
@@ -341,12 +436,20 @@ func probe(ctx context.Context, entry *transport.Entry, method string, target *u
 		},
 	}
 
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), method, target.String(), nil)
+	var body io.Reader
+	if len(inputs) > 0 && len(inputs[0].body) > 0 {
+		body = bytes.NewReader(inputs[0].body)
+	}
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), method, target.String(), body)
 	if err != nil {
 		res.ErrorStage = StageResolve
 		res.Error = "failed to build probe request"
 		return res
 	}
+	if len(inputs) > 0 {
+		req.Header = inputs[0].headers
+	}
+	req.GetBody = nil
 
 	client := &http.Client{
 		Transport: entry.RoundTripper,

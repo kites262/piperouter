@@ -10,6 +10,7 @@ import (
 
 	"github.com/kites262/piperouter/internal/config"
 	"github.com/kites262/piperouter/internal/metrics"
+	"github.com/kites262/piperouter/internal/overwrite"
 	"github.com/kites262/piperouter/internal/router"
 	"github.com/kites262/piperouter/internal/transport"
 )
@@ -289,6 +290,17 @@ func buildSnapshot(cfg *config.Config, baseDir string) (*Snapshot, error) {
 	table, err := router.BuildTable(cfg.Routes, baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("build route table: %w", err)
+	}
+	// Bind immutable plans before publishing the new table. Existing requests
+	// retain their previous snapshot and therefore their original rule set.
+	bindings := make(map[string][]string, len(cfg.Routes))
+	for _, route := range cfg.Routes {
+		if route.Proxy != nil {
+			bindings[route.Name] = route.Proxy.Overwrites
+		}
+	}
+	for _, route := range table.Routes() {
+		route.Overwrite = overwrite.Compile(cfg.Overwrite, bindings[route.Name])
 	}
 	pool, err := transport.NewPool(cfg.Transports, cfg.Network)
 	if err != nil {

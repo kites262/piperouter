@@ -68,6 +68,26 @@ transports:
     type: socks5
     url: socks5://127.0.0.1:1080
 
+# Optional JSON path string replacements for LLM API requests.
+# Both the global switch and each rule default to false. Enable both to apply.
+# Active bindings buffer request JSON (8 MiB input/output, 30s read limit);
+# responses, including SSE, remain streamed. No-body requests bypass processing.
+overwrite:
+  enabled: false
+  rules:
+    - name: model-alias
+      enabled: false
+      condition:
+        phase: req            # Defaults to req; Res is not yet available.
+        path: .model          # Leading "." is the complete request body.
+        op: eq
+        value: gpt-6.1-sol
+      action:
+        phase: req            # Defaults to req; Res is not yet available.
+        path: .model
+        op: set
+        value: gpt-6.1-sol-1
+
 # Prefix routes (PRD §5.1). Longest matching prefix wins; matching is
 # path-boundary aware (/openai matches /openai and /openai/..., never
 # /openai2). Targets must be absolute http/https URLs without query,
@@ -85,6 +105,8 @@ routes:
       # so a fronting reverse proxy never leaks client IPs to the target.
       strip_forward_headers: true
       transport: jp-proxy
+      # Binding is dormant while the global switch or the rule is disabled.
+      overwrites: [model-alias]
 
   # /github/repos/... → https://api.github.com/repos/... via direct egress.
   - name: github

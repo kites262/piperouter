@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/kites262/piperouter/internal/config"
+	"github.com/kites262/piperouter/internal/overwrite"
 )
 
 // Route is one compiled prefix→backend mapping.
@@ -33,6 +34,7 @@ type Route struct {
 	StripPrefix         bool
 	StripForwardHeaders bool
 	TransportName       string
+	Overwrite           *overwrite.Plan
 }
 
 // IsStatic reports whether this route serves a local file.

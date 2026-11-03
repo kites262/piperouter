@@ -37,7 +37,6 @@ There is **no automatic migration**. A file written for another schema version i
   strip_prefix: true                       target: https://api.example.com/v1
   transport: jp-proxy                      strip_prefix: true
                                            transport: jp-proxy
-
 - name: landing                        - name: landing
   type: static                           type: static
   prefix: /                              prefix: /
@@ -45,7 +44,7 @@ There is **no automatic migration**. A file written for another schema version i
                                            file: /var/www/index.html
 ```
 
-Everything outside `routes[]` (server, runtime, network, transports) is unchanged from v1 except the `version` value itself.
+Existing server, runtime, network and transport settings are unchanged from v1 except the `version` value itself. Optional `overwrite` settings extend `v0.3`; omitting them preserves existing forwarding behavior.
 
 ## Complete example
 
@@ -89,6 +88,22 @@ transports:                     # outbound proxy links ("direct" is built in)
     type: socks5
     url: socks5://127.0.0.1:1080
 
+overwrite:                      # optional; disabled by default
+  enabled: false
+  rules:
+    - name: model-alias
+      enabled: false            # rules also default to disabled
+      condition:
+        phase: req              # request body; defaults to req
+        path: .model            # leading "." is the complete request body
+        op: eq
+        value: gpt-6.1-sol
+      action:
+        phase: req              # request body; defaults to req
+        path: .model
+        op: set
+        value: gpt-6.1-sol-1
+
 routes:                         # prefix → handler mappings
   - name: openai
     enabled: true
@@ -100,6 +115,7 @@ routes:                         # prefix → handler mappings
       strip_prefix: true
       strip_forward_headers: true # remove Forwarded/Via/X-Forwarded-* (default)
       transport: jp-proxy
+      overwrites: [model-alias]  # dormant until both switches above are enabled
   - name: github
     prefix: /github
     options:
@@ -124,6 +140,7 @@ routes:                         # prefix → handler mappings
 | `network` | object | no | see below | outbound timeouts |
 | `transports` | list | no | `[]` | outbound proxy links |
 | `routes` | list | no | `[]` | prefix routes |
+| `overwrite` | object | no | disabled | reusable JSON path string replacement rules |
 
 ### `server.proxy`
 
@@ -216,6 +233,7 @@ Matches a path, rewrites onto `options.target`, and reverse-proxies over `option
 | `transport` | string | no | `"direct"` | name of a declared transport, or the built-in `direct` |
 | `strip_prefix` | bool | no | `true` | remove the matched prefix before joining with the target path |
 | `strip_forward_headers` | bool | no | `true` | remove `Forwarded`, `Via` and `X-Forwarded-For/-Host/-Proto` before forwarding; `false` passes inbound values through unchanged |
+| `overwrites` | string[] | no | `[]` | bound rule names from `overwrite.rules`; proxy routes only |
 
 #### Route type `static`
 
@@ -259,6 +277,113 @@ routes:
 
 Omit `match` (or set `match: prefix`) to keep the root route as a catch-all that answers every unclaimed path with the file.
 
+## Overwrite
+
+Overwrite evaluates a condition and applies an action at JSON paths. It is intended for
+small LLM API adaptations such as matching `.model = gpt-6.1-sol` and setting
+`.model = gpt-6.1-sol-1`. Condition and action paths are independent.
+Each condition and action selects its own phase: **Req** operates on the request body.
+Both phases default to `req`. **Res** represents the response body and is not yet supported.
+Header rewriting is not supported.
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `overwrite.enabled` | bool | no | `false` | global processing switch |
+| `overwrite.rules` | list | no | `[]` | reusable rule definitions |
+| `overwrite.rules[].name` | string | yes | — | unique rule name; same syntax as route names |
+| `overwrite.rules[].enabled` | bool | no | `false` | enable this rule |
+| `overwrite.rules[].condition.phase` | string | no | `req` | body to inspect; only `req` is currently supported |
+| `overwrite.rules[].condition.path` | string | yes | — | JSON path to compare; editor defaults to `.model` |
+| `overwrite.rules[].condition.op` | string | no | `eq` | exact string equality |
+| `overwrite.rules[].condition.value` | string | no | `""` | original string to match; empty strings are valid |
+| `overwrite.rules[].action.phase` | string | no | `req` | body to change; only `req` is currently supported |
+| `overwrite.rules[].action.path` | string | yes | — | JSON path to change; editor defaults to `.model` |
+| `overwrite.rules[].action.op` | string | no | `set` | replace an existing string |
+| `overwrite.rules[].action.value` | string | no | `""` | replacement string; empty strings are valid |
+
+Quote `value` entries that could otherwise become numbers or booleans, such as
+`value: "123"` or `value: "false"`.
+
+The first `.` in a path represents the complete body in that condition or action's phase.
+Supported paths select object members and array elements by index:
+
+| JSON path | Selected value |
+| --- | --- |
+| `.model` | `model` in the root object |
+| `.reasoning.effort` | `effort` in the `reasoning` object |
+| `.messages[0].model` | `model` in the first element of `messages` |
+| `.["a.b"]` | the literal root key `a.b` |
+
+Quoted member names use JSON string escaping. Wildcards, filters, recursive descent and
+script expressions are not supported. Existing rules using `field` or `path` together with
+`from` and `to` still load. They normalize to a `req` condition and action at the same path:
+`from` becomes `condition.value`, and `to` becomes `action.value`. A legacy `field: model`
+becomes `.model`; a legacy field such as `a.b` remains a literal member name and becomes
+`.["a.b"]`. A legacy rule-level `phase` also still loads and supplies the phase for both
+the condition and action; saved configurations use `condition.phase` and `action.phase`.
+
+In the console, open **Overwrite**, create a rule, configure its condition and action with
+**Req** selected in each, and select the proxy routes to bind. Enable the rule and the
+global switch to apply it. In **Diagnostics**, select POST, enter a JSON Body and any request headers, then
+send the request through its matching route. The result's **Outbound body** shows the JSON
+actually sent after Overwrite. Route editing also exposes bindings. Static routes cannot
+use Overwrite.
+
+### Matching and replacement
+
+- A request is processed only when the global switch is on and its matched proxy route has
+  at least one enabled bound rule that can change a value. If every enabled rule uses the
+  same path and value for its condition and action, the group is a no-op. Disabled rules,
+  groups consisting only of these identity rules, and unbound routes do not read or buffer
+  the Body.
+- Requests with no body bypass processing, so `GET /models` continues to work. WebSocket
+  upgrades also bypass Overwrite.
+- Processing requires an uncompressed JSON object (`application/json` or `application/*+json`; `Content-Encoding` absent or `identity`). It checks the complete JSON
+  before forwarding anything upstream. Duplicate keys in objects visited by a configured
+  path are rejected, including differently escaped spellings of the same key. Unrelated
+  nested objects are preserved without interpreting their members.
+- The condition matches only an existing string exactly equal to `condition.value`. A
+  matching rule sets the existing string at `action.path` to `action.value`. Missing paths,
+  out-of-range array indexes, incompatible parent types, `null`, numbers, booleans, objects
+  and arrays are left unchanged. Rules do not create missing values.
+- All rules match the **original** values. Binding `A → B` and `B → C` transforms original
+  `A` to `B`, and original `B` to `C`; it never turns original `A` into `C`.
+- A route cannot bind duplicate names or multiple enabled rules with the same condition
+  phase/path/value and action phase/path. Conflicts are rejected even while the global switch
+  is off; disabled draft rules may share the same combination. Different conditions can
+  target the same action path; if several match, the last rule in route binding order wins.
+  An identity rule still participates in a group with other changes, so it can restore an
+  original value written by an earlier rule.
+- Unchanged JSON bytes are preserved, including whitespace and numeric precision. Matching
+  string values are replaced with valid JSON strings; the outgoing content length is updated.
+
+### Performance and limits
+
+A bound, enabled rule buffers the complete request body, including requests whose values do
+not match. Unlike normal forwarding, it waits for upload completion before contacting the
+upstream. It scans the JSON without expanding chat messages, tools or base64 strings into a
+generic object tree, and changes only matched value fragments.
+
+Limits are fixed: **8 MiB input**, **8 MiB resulting output**, **30 seconds to read the Body**,
+and **eight concurrent Body-processing requests** across all routes. Capacity is released
+before waiting for the upstream response, so long SSE sessions do not occupy processing slots.
+The read timeout does not limit the lifetime of a response stream.
+
+Short text conversations usually add little processing work. Long contexts, embedded media,
+slow uploads and concurrent large requests can noticeably increase time to first token and
+memory use. SSE responses continue to flush incrementally; response chunks are not buffered
+or rewritten by this feature. With processing disabled or no active binding, requests retain
+the normal streaming path.
+
+Unsupported content returns `415`; invalid JSON or a non-object root returns `400`;
+input/output over the limit returns `413`; exhausted processing capacity returns `503`.
+These failures do not contact the upstream. There is no fallback that silently forwards an
+unprocessed request.
+
+Changes to global/rule switches, replacement values and route bindings hot-reload with the
+rest of the configuration. Each request keeps the snapshot it started with; existing SSE
+streams remain open, and a rejected configuration leaves the previous rules active.
+
 ## Validation rules
 
 The loader rejects a configuration (listing **all** problems at once) when any of the following holds:
@@ -272,6 +397,8 @@ The loader rejects a configuration (listing **all** problems at once) when any o
 - a route `match` is not `prefix` or `exact` (empty is normalized to `prefix`);
 - a route's `options` block does not match its `type` (e.g. `file` on a proxy route);
 - a `proxy` route references a transport that doesn't exist (`direct` is always known);
+- an Overwrite rule has an invalid or duplicate name, an unsupported phase or operator, an invalid JSON path, or invalid UTF-8 values;
+- a `proxy` route references an unknown or duplicate Overwrite rule, or binds conflicting condition phase/path/value and action phase/path combinations;
 - a route `prefix` is duplicated or violates the prefix rules below;
 - a `proxy` route `options.target` is missing, not an absolute URL, not `http`/`https`, has no host, or contains userinfo, a query, or a fragment;
 - a `static` route `options.file` is missing, looks like a URL, has a trailing separator, is relative without a config-file base directory, fails to resolve to an absolute path, or (when the resolved path already exists) is not a regular file;
@@ -379,9 +506,10 @@ What PipeRouter does **not** touch:
 - **Query strings** — passed through byte-for-byte, including parameter order and a bare trailing `?`.
 - **Percent-encoding** — `%2F`, `%20` etc. are never decoded, re-encoded or "cleaned"; the rewrite works on the escaped path.
 - **Duplicate slashes** and other legal path oddities inside the remaining path.
-- **Method, body, ordinary headers** — forwarded as-is (hop-by-hop headers such as `Connection`, `TE`, `Transfer-Encoding` are handled per the HTTP spec; WebSocket upgrades are preserved).
+- **Method and ordinary headers** — forwarded as-is (hop-by-hop headers such as `Connection`, `TE`, `Transfer-Encoding` are handled per the HTTP spec; WebSocket upgrades are preserved).
+- **Body** — forwarded as-is unless an enabled, bound [Overwrite](#overwrite) rule replaces a JSON string at its selected path.
 
-Two deliberate exceptions to full transparency:
+Other deliberate exceptions to full transparency:
 
 - `Host` is always set to the **target's** host (there is no `preserve_host` option in v0.1).
 - PipeRouter adds **no** `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded` or `Via` headers — and by default it **removes** inbound ones (`strip_forward_headers: true`), so a fronting reverse proxy such as Caddy or nginx never leaks the real client IP or your public hostname to the target. Set `strip_forward_headers: false` on a route to pass the inbound values through unchanged (useful when the target is your own service and needs the client IP). Stripped or not, inbound forward headers are still captured in the in-memory access log, so the WebUI keeps showing the original client.
@@ -393,6 +521,12 @@ Upstream HTTP responses — including `401`, `404`, `429`, `500` — are relayed
 | Condition | Status | Body |
 | --- | --- | --- |
 | No route matched the request path | `404` | stock Go plain-text `404 page not found` — deliberately anonymous; logged internally as `route_not_found` |
+| Active Overwrite binding received unsupported media type or content encoding | `415` | `{"error":"overwrite_unsupported_media_type"}` |
+| Overwrite received invalid JSON, duplicate keys in an accessed object or a non-object root | `400` | `{"error":"overwrite_invalid_json"}` |
+| Overwrite input or output exceeds 8 MiB | `413` | `{"error":"overwrite_body_too_large"}` |
+| Overwrite Body read exceeded 30 seconds | `408` | `{"error":"overwrite_read_timeout"}` |
+| Overwrite Body read failed | `400` | `{"error":"overwrite_read_failed"}` |
+| All eight Overwrite processing slots are occupied | `503` | `{"error":"overwrite_busy"}` |
 | Static route received a method other than GET/HEAD | `405` | stock Go plain-text `Method Not Allowed` (also sets `Allow: GET, HEAD`) — deliberately anonymous; logged internally as `method_not_allowed` |
 | DNS failure, connection refused/failed, dial timeout, HTTP-proxy CONNECT failure, SOCKS5 negotiation failure, TLS handshake failure, upstream closed the connection before responding | `502` | `{"error":"upstream_connection_failed"}` |
 | Upstream connected but response headers didn't arrive within `network.response_header_timeout` | `504` | `{"error":"upstream_timeout"}` |
@@ -419,7 +553,7 @@ PipeRouter watches the configuration file (rename-safe, with a short debounce so
 - **Valid change** → a new immutable runtime snapshot (route table + transport pools) is built and swapped in atomically. New requests use it immediately; in-flight requests, SSE streams and WebSockets keep running on the old snapshot undisturbed. No restart, ever.
 - **Invalid change** → the process keeps serving with the **last valid configuration**, logs the reason, and reports the error through `GET /api/v1/status` (`config.valid: false` + `last_error`); the WebUI shows a persistent banner. PipeRouter never exits because of a bad config edit.
 
-Listener addresses (`server.proxy.listen`, `server.admin.listen`) and proxy TLS settings cannot be re-applied without interruption — changing them requires a restart. Routes, transports, log level and log capacity hot-reload.
+Listener addresses (`server.proxy.listen`, `server.admin.listen`) and proxy TLS settings cannot be re-applied without interruption — changing them requires a restart. Routes, transports, Overwrite rules and bindings, log level and log capacity hot-reload.
 
 ### Editing through the WebUI / Admin API
 

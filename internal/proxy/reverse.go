@@ -135,6 +135,21 @@ func (h *handler) reverseRewrite(pr *httputil.ProxyRequest) {
 	// Host = target host, fixed in v0.1 (PRD §9.2). Explicit is
 	// better than relying on Host=="" falling back to URL.Host.
 	pr.Out.Host = pr.Out.URL.Host
+	if st.overwriteBuffered {
+		// ReverseProxy suppresses Transport.Close on an inbound body to avoid
+		// blocking on unread client uploads. Our replacement is already fully
+		// buffered and Close is safe: allow the transport to free it as soon
+		// as upload finishes, without retaining memory throughout an SSE.
+		pr.Out.Body = pr.In.Body
+		pr.Out.Header.Del("Content-Length")
+		pr.Out.Header.Del("Transfer-Encoding")
+		pr.Out.Header.Del("Trailer")
+	}
+	if st.overwriteChanged {
+		for _, name := range []string{"Content-MD5", "Digest", "Content-Digest", "Repr-Digest"} {
+			pr.Out.Header.Del(name)
+		}
+	}
 	if route.StripForwardHeaders {
 		// ReverseProxy already deleted Forwarded/X-Forwarded-*
 		// before Rewrite; Via is ours to remove.

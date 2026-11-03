@@ -429,9 +429,89 @@ export interface components {
             server?: components["schemas"]["ServerConfig"];
             runtime?: components["schemas"]["RuntimeConfig"];
             network?: components["schemas"]["NetworkConfig"];
+            overwrite?: components["schemas"]["OverwriteConfig"];
             transports?: components["schemas"]["TransportConfig"][];
             routes?: components["schemas"]["RouteConfig"][];
         };
+        /** @description Optional, backwards-compatible extension of schema v0.3. Default off. Active rules buffer HTTP JSON request bodies, with an 8 MiB input/output limit and a 30s read timeout. SSE responses continue streaming; WebSockets are unchanged. */
+        OverwriteConfig: {
+            /** @default false */
+            enabled: boolean;
+            rules?: components["schemas"]["OverwriteRule"][] | null;
+        };
+        /** @description Apply an action when a condition matches. Rules and Route bindings are managed atomically through the config API. Normalized responses include separate phases in condition and action; legacy properties are accepted on input. */
+        OverwriteRule: {
+            name: string;
+            /** @default false */
+            enabled: boolean;
+            /**
+             * @deprecated
+             * @description Legacy shared condition and action phase. Use condition.phase and action.phase for new rules. Missing phases default to req.
+             * @enum {string}
+             */
+            phase?: "req";
+            condition?: components["schemas"]["OverwriteCondition"];
+            action?: components["schemas"]["OverwriteAction"];
+            /**
+             * @deprecated
+             * @description Legacy shared condition and action path. Use condition and action for new rules.
+             */
+            path?: string;
+            /**
+             * @deprecated
+             * @description Legacy literal JSON object key. Use condition and action for new rules.
+             */
+            field?: string;
+            /**
+             * @deprecated
+             * @description Legacy condition value.
+             */
+            from?: string;
+            /**
+             * @deprecated
+             * @description Legacy action value.
+             */
+            to?: string;
+        } | unknown | unknown | unknown;
+        OverwriteCondition: {
+            /**
+             * @description Phase whose body is evaluated by this condition.
+             * @default req
+             * @enum {string}
+             */
+            phase: "req";
+            path: components["schemas"]["OverwritePath"];
+            /**
+             * @description Compare the value at the path with the supplied value.
+             * @default eq
+             * @enum {string}
+             */
+            op: "eq";
+            /** @description Case-sensitive value. Empty strings and surrounding spaces are preserved. */
+            value?: string;
+        };
+        OverwriteAction: {
+            /**
+             * @description Phase whose body is modified by this action.
+             * @default req
+             * @enum {string}
+             */
+            phase: "req";
+            path: components["schemas"]["OverwritePath"];
+            /**
+             * @description Set the value at the path when the condition matches.
+             * @default set
+             * @enum {string}
+             */
+            op: "set";
+            /** @description Value to write. Empty strings and surrounding spaces are preserved. */
+            value?: string;
+        };
+        /**
+         * @description JSON path rooted at the complete body. The first dot represents the body; object members use dot notation or JSON-quoted bracket keys, and array elements use non-negative indices. Examples are .model, .reasoning.effort, .messages[0].model and .["a.b"].
+         * @example .model
+         */
+        OverwritePath: string;
         /** @description Listener configuration for the proxy and admin planes. */
         ServerConfig: {
             proxy?: components["schemas"]["ProxyServerConfig"];
@@ -558,6 +638,8 @@ export interface components {
         };
         /** @description Options block of a proxy route (type "proxy"). */
         ProxyRouteOptions: {
+            /** @description Ordered references to overwrite rule names. Conditions match original body values. Actions execute in binding order. */
+            overwrites?: string[] | null;
             /**
              * @description Absolute http/https URL without userinfo, query or fragment.
              * @example https://api.openai.com/v1
@@ -898,6 +980,12 @@ export interface components {
              * @default GET
              */
             method: string;
+            /** @description Optional JSON request body for POST. Active route overwrite rules apply before sending upstream. */
+            body?: string;
+            /** @description Optional request headers. Protocol-managed headers cannot be set; a supplied body uses application/json. */
+            headers?: {
+                [key: string]: string;
+            };
         };
         /** @description Named-route diagnostics request (Routes page Test). */
         RouteTestRequest: {
@@ -966,6 +1054,10 @@ export interface components {
             header_duration_ms: number;
             /** Format: double */
             total_duration_ms: number;
+            /** @description Outbound body after applying active rules, only returned for requests with a body. Never logged or persisted. */
+            request_body?: string;
+            /** @description Whether the outbound body differs from the supplied body. */
+            body_changed?: boolean;
         };
         /** @description Standard error envelope. */
         ApiError: {

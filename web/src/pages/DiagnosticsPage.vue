@@ -26,6 +26,8 @@ const METHODS = ['GET', 'HEAD', 'POST'] as const
 
 const path = ref('/')
 const method = ref('GET')
+const body = ref('')
+const headers = ref('')
 const pathTouched = ref(false)
 const running = ref(false)
 const runError = ref<string | null>(null)
@@ -67,7 +69,19 @@ async function submit(): Promise<void> {
   running.value = true
   runError.value = null
   try {
-    const result = await testRequest({ path: reqPath, method: method.value })
+    let requestHeaders: Record<string, string> | undefined
+    if (headers.value.trim()) {
+      const parsed: unknown = JSON.parse(headers.value)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.values(parsed).some((v) => typeof v !== 'string')) {
+        throw new Error('Headers must be a JSON object with string values.')
+      }
+      requestHeaders = parsed as Record<string, string>
+    }
+    const result = await testRequest({
+      path: reqPath, method: method.value,
+      ...(method.value === 'POST' && body.value !== '' ? { body: body.value } : {}),
+      ...(requestHeaders ? { headers: requestHeaders } : {}),
+    })
     selectedRunId.value = addRun({
       kind: 'request',
       subject: result.route,
@@ -130,6 +144,16 @@ function clearHistory(): void {
               </Select>
             </label>
 
+            <label v-if="method === 'POST'" class="block">
+              <span class="mb-1.5 block text-xs font-medium text-fg-secondary">JSON body</span>
+              <textarea v-model="body" rows="8" spellcheck="false" placeholder='{"model":"gpt-6.1-sol","messages":[]}' class="w-full rounded-md border border-border bg-bg-deep p-3 font-mono text-sm text-fg focus:outline-accent" />
+            </label>
+
+            <details>
+              <summary class="cursor-pointer text-xs font-medium text-fg-secondary">Headers</summary>
+              <textarea v-model="headers" rows="3" spellcheck="false" placeholder='{"Authorization":"Bearer …"}' class="mt-2 w-full rounded-md border border-border bg-bg-deep p-3 font-mono text-sm text-fg focus:outline-accent" aria-label="Request headers as JSON" />
+            </details>
+
             <p
               v-if="runError !== null"
               class="break-words rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger"
@@ -148,8 +172,12 @@ function clearHistory(): void {
 
       <div class="animate-fade-up stagger-2 space-y-6 xl:col-span-3">
         <StagedResult v-if="displayedRun !== null" :run="displayedRun" />
+        <Card v-if="displayedRun?.result.request_body !== undefined" glass title="Outbound body">
+          <template #header><Badge :variant="displayedRun.result.body_changed ? 'success' : 'muted'">{{ displayedRun.result.body_changed ? 'Modified' : 'Unchanged' }}</Badge></template>
+          <pre class="max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-fg">{{ displayedRun.result.request_body }}</pre>
+        </Card>
         <EmptyState
-          v-else
+          v-if="displayedRun === null"
           title="No probes yet"
           description="Enter a request path on the left. Results show route match, rewrite target, transport, connection, TLS and the HTTP response."
         >
