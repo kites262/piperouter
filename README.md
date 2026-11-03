@@ -181,11 +181,22 @@ listeners, optional proxy TLS, log level and outbound timeouts.
 
 ## 🔒 Security
 
-> The admin API and web console have **no authentication**. Treat the admin plane as privileged.
+Start with `--access-token <token>` to require **Bearer authentication** for all admin API requests:
+
+```bash
+piperouter serve --config piperouter.yaml --access-token 'your-secret-token'
+curl -H 'Authorization: Bearer your-secret-token' http://127.0.0.1:9090/api/v1/status
+```
+
+Open the console and enter the token in the **Access Token** field at the lower left, then click **Apply**.
+The masked token is kept in the current tab's session storage; **Clear** removes it. The page and
+static assets remain public so you can enter credentials. Missing or invalid credentials return
+`401 Unauthorized`. The token is runtime-only and is never saved to YAML or returned by the API.
+Without `--access-token`, the API remains unauthenticated.
 
 - The admin listener defaults to **`127.0.0.1:9090` — loopback only**, where it also enforces a
   loopback `Host` check to blunt DNS-rebinding. Keep it that way on any shared or internet-facing
-  host; binding a non-loopback address logs a prominent warning.
+  host; binding a non-loopback address without a token logs a prominent warning.
 - To reach the console remotely, front it with something you trust: an SSH tunnel
   (`ssh -N -L 9090:127.0.0.1:9090 you@server`), a VPN, or an authenticating reverse proxy such as
   Caddy. See [`docs/deployment.md`](docs/deployment.md).
@@ -218,6 +229,7 @@ piperouter version             print version information
 | `--config <path>` | configuration file (default `piperouter.yaml`) |
 | `--proxy-listen <addr>` | override `server.proxy.listen` (runtime only, not persisted) |
 | `--admin-listen <addr>` | override `server.admin.listen` (runtime only, not persisted) |
+| `--access-token <token>` | require `Authorization: Bearer <token>` for every admin API request (runtime only) |
 | `--disable-admin` | disable the admin API and web console |
 | `--disable-web` | disable the web console (admin API stays on) |
 | `--log-level <level>` | `debug` \| `info` \| `warn` \| `error` |

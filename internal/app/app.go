@@ -39,6 +39,7 @@ type Options struct {
 	ConfigPath   string // default "piperouter.yaml"
 	ProxyListen  string // CLI override, "" = use config
 	AdminListen  string // CLI override, "" = use config
+	AccessToken  string // optional admin API Bearer token; runtime only
 	DisableAdmin bool   // force admin (and therefore web) off
 	DisableWeb   bool   // force web off
 	LogLevel     string // CLI override, "" = use config
@@ -122,6 +123,12 @@ func (a *App) AdminAddr() string { return a.adminAddr }
 // Start binds the listeners, launches the servers and returns immediately.
 // Used by Run and directly by tests; callers must call Shutdown or Close.
 func Start(ctx context.Context, opts Options) (*App, error) {
+	// Bearer credentials cannot contain whitespace or non-ASCII header bytes.
+	for _, c := range opts.AccessToken {
+		if c <= 32 || c >= 127 {
+			return nil, fmt.Errorf("access token must contain only visible ASCII characters without spaces")
+		}
+	}
 	configPath := opts.ConfigPath
 	if configPath == "" {
 		configPath = "piperouter.yaml"
@@ -248,15 +255,16 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 		}
 		a.adminSrv = &http.Server{
 			Handler: api.NewHandler(api.Deps{
-				Manager:   manager,
-				Metrics:   reg,
-				Ring:      a.ring,
-				Details:   a.details,
-				Logger:    logger,
-				Version:   opts.Version,
-				WebUI:     webHandler,
-				ProxyAddr: a.proxyAddr,
-				AdminAddr: a.adminAddr,
+				Manager:     manager,
+				Metrics:     reg,
+				Ring:        a.ring,
+				Details:     a.details,
+				Logger:      logger,
+				Version:     opts.Version,
+				WebUI:       webHandler,
+				ProxyAddr:   a.proxyAddr,
+				AdminAddr:   a.adminAddr,
+				AccessToken: opts.AccessToken,
 				// Loopback-bound admin (the default) enforces loopback Host
 				// to block DNS rebinding; a deliberately exposed admin plane
 				// sits behind a proxy that forwards arbitrary Host (§15.3).
@@ -267,7 +275,7 @@ func Start(ctx context.Context, opts Options) (*App, error) {
 			IdleTimeout:  120 * time.Second,
 			ErrorLog:     httpErrLog,
 		}
-		if !isLoopbackListen(adminListen) {
+		if !isLoopbackListen(adminListen) && opts.AccessToken == "" {
 			logger.Warn("SECURITY WARNING: the admin API has no authentication and is listening on a NON-LOOPBACK address — " +
 				"anyone who can reach it can read and rewrite the entire configuration. " +
 				"Bind it to 127.0.0.1 or put an authenticating reverse proxy (or firewall) in front of it (PRD §15.3).")

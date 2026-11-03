@@ -30,6 +30,27 @@ import type {
 } from './types'
 
 const BASE = '/api/v1'
+const TOKEN_KEY = 'piperouter.accessToken'
+let accessToken = ''
+try {
+  accessToken = sessionStorage.getItem(TOKEN_KEY) ?? ''
+} catch {
+  // Authentication still works in memory when browser storage is unavailable.
+}
+
+export function getAccessToken(): string {
+  return accessToken
+}
+
+export function setAccessToken(token: string): void {
+  accessToken = token
+  try {
+    if (token === '') sessionStorage.removeItem(TOKEN_KEY)
+    else sessionStorage.setItem(TOKEN_KEY, token)
+  } catch {
+    // Keep the token for this page even if session storage is blocked.
+  }
+}
 
 /** Thrown for any non-2xx response (and for network failures, status = 0). */
 export class ApiError extends Error {
@@ -53,14 +74,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (accessToken !== '') headers.Authorization = `Bearer ${accessToken}`
   let res: Response
   try {
     res = await fetch(path, {
       method,
-      headers:
-        body !== undefined
-          ? { Accept: 'application/json', 'Content-Type': 'application/json' }
-          : { Accept: 'application/json' },
+      headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch (err) {

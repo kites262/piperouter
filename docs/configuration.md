@@ -63,7 +63,7 @@ server:
       key_file: ""              # required when tls.enabled: true
   admin:
     enabled: true               # admin API + WebUI on/off
-    listen: "127.0.0.1:9090"    # keep on loopback — no authentication!
+    listen: "127.0.0.1:9090"    # keep on loopback; optional --access-token auth
   web:
     enabled: true               # WebUI (served by the admin server)
 
@@ -141,10 +141,10 @@ The certificate is loaded at startup; an invalid cert/key pair prevents the prox
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `admin.enabled` | bool | `true` | run the admin API (and, with it, the WebUI) |
-| `admin.listen` | string | `"127.0.0.1:9090"` | admin listen address; **loopback by default — there is no authentication** |
+| `admin.listen` | string | `"127.0.0.1:9090"` | admin listen address; **loopback by default; use `--access-token` for Bearer authentication** |
 | `web.enabled` | bool | `true` | serve the embedded WebUI from the admin server |
 
-With `admin.enabled: false` the admin API and WebUI are off; the proxy keeps running and the config can still be managed by editing the file (hot reload stays active). `web.enabled` has no effect while the admin server is disabled. Binding the admin listener to a non-loopback address logs a prominent security warning.
+With `admin.enabled: false` the admin API and WebUI are off; the proxy keeps running and the config can still be managed by editing the file (hot reload stays active). `web.enabled` has no effect while the admin server is disabled. Binding the admin listener to a non-loopback address without `--access-token` logs a prominent security warning. The token is a startup-only CLI option and is never persisted in YAML. The WebUI provides an Access Token field at the lower left; all API requests use `Authorization: Bearer <token>` when set.
 
 ### `runtime`
 

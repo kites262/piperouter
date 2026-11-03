@@ -1,7 +1,7 @@
 // Package api implements the PipeRouter Admin REST API under /api/v1
 // (PRD §15) and mounts the embedded WebUI for non-API paths.
 //
-// Security posture (PRD §15.3): v0.1 has no authentication, so the
+// Security posture: optional Bearer authentication protects the API. The
 // handler never emits CORS headers, rejects mutating requests whose
 // Origin header is not same-host, caps request bodies at 1 MiB and sets
 // conservative security headers on every response. Errors use the
@@ -11,6 +11,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net"
@@ -29,13 +31,14 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 
 // Deps wires the handler to the rest of the process.
 type Deps struct {
-	Manager *runtime.Manager
-	Metrics *metrics.Registry
-	Ring    *logging.Ring
-	Details *logging.DetailsStore
-	Logger  *slog.Logger
-	Version string
-	WebUI   http.Handler // nil → no UI mounted, non-API paths get 404 JSON
+	Manager     *runtime.Manager
+	Metrics     *metrics.Registry
+	Ring        *logging.Ring
+	Details     *logging.DetailsStore
+	Logger      *slog.Logger
+	Version     string
+	WebUI       http.Handler // nil → no UI mounted, non-API paths get 404 JSON
+	AccessToken string       // empty disables authentication; never returned by the API
 
 	// ProxyAddr/AdminAddr are the EFFECTIVE bound listener addresses,
 	// which may differ from the config file when CLI flags override them
@@ -115,6 +118,12 @@ func (s *server) registerRoutes() {
 // WebUI when mounted, 404 JSON otherwise.
 func (s *server) dispatch(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+		if s.deps.AccessToken != "" && !validAccessToken(r, s.deps.AccessToken) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="PipeRouter"`)
+			w.Header().Set("Cache-Control", "no-store")
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Enter a valid Access Token in the lower-left sidebar or send an Authorization: Bearer header.")
+			return
+		}
 		s.serveAPI(w, r)
 		return
 	}
@@ -123,6 +132,21 @@ func (s *server) dispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "")
+}
+
+// Hash both values before constant-time comparison so differing lengths do
+// not reveal the configured token length. Only a single Bearer header is accepted.
+func validAccessToken(r *http.Request, token string) bool {
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 {
+		return false
+	}
+	scheme, credential, ok := strings.Cut(values[0], " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || credential == "" {
+		return false
+	}
+	got, want := sha256.Sum256([]byte(credential)), sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare(got[:], want[:]) == 1
 }
 
 func (s *server) serveAPI(w http.ResponseWriter, r *http.Request) {

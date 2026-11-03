@@ -17,7 +17,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } f
 import type { ComponentPublicInstance } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
-import { ApiError, getStatus } from '@/api/client'
+import { ApiError, getAccessToken, setAccessToken, getStatus } from '@/api/client'
 import type { StatusResponse } from '@/api/types'
 import ConfigErrorBanner from '@/components/ConfigErrorBanner.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
@@ -87,12 +87,37 @@ const pageTitle = computed(() => route.meta.title ?? 'PipeRouter')
 // --- shared status poll (every 5s), provided to banner/pages -------------
 const status = ref<StatusResponse | null>(null)
 const statusError = ref<string | null>(null)
+const authRequired = ref(false)
+const tokenInput = ref(getAccessToken())
+const authRevision = ref(0)
+
+function applyToken(): void {
+  setAccessToken(tokenInput.value.trim())
+  tokenInput.value = getAccessToken()
+  authRevision.value++
+  status.value = null
+  statusError.value = null
+  authRequired.value = false
+  void fetchStatus()
+}
+
+function clearToken(): void {
+  tokenInput.value = ''
+  applyToken()
+}
 
 async function fetchStatus(): Promise<void> {
+  const revision = authRevision.value
   try {
-    status.value = await getStatus()
+    const result = await getStatus()
+    if (revision !== authRevision.value) return
+    status.value = result
     statusError.value = null
+    authRequired.value = false
   } catch (err) {
+    if (revision !== authRevision.value) return
+    status.value = null
+    authRequired.value = err instanceof ApiError && err.status === 401
     statusError.value =
       err instanceof ApiError ? (err.detail !== '' ? err.detail : err.code) : String(err)
   }
@@ -102,6 +127,7 @@ const { refresh } = usePolling(fetchStatus, { interval: 5000 })
 provide(statusKey, { status, error: statusError, refresh })
 
 const chip = computed<{ tone: 'success' | 'warning' | 'danger' | 'muted'; label: string }>(() => {
+  if (authRequired.value) return { tone: 'danger', label: 'Token required or invalid' }
   if (statusError.value !== null) return { tone: 'danger', label: 'Admin unreachable' }
   if (status.value === null) return { tone: 'muted', label: 'Connecting…' }
   if (!status.value.config.valid) return { tone: 'warning', label: 'Config invalid' }
@@ -186,6 +212,27 @@ const adminPosture = computed(() => {
       </nav>
 
       <div class="space-y-2 border-t border-border p-3">
+        <form class="space-y-2 px-3 pb-2" @submit.prevent="applyToken">
+          <label for="access-token" class="block text-xs font-medium text-fg-secondary">Access Token</label>
+          <input
+            id="access-token"
+            v-model="tokenInput"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Enter Access Token"
+            class="w-full rounded-lg border border-border bg-transparent px-2 py-1.5 text-xs text-fg outline-none focus:border-accent"
+            :aria-invalid="authRequired"
+            aria-describedby="access-token-help"
+          />
+          <div class="flex gap-2">
+            <button type="submit" class="rounded-lg bg-accent-soft px-3 py-1.5 text-xs text-accent">Apply</button>
+            <button type="button" class="rounded-lg px-3 py-1.5 text-xs text-fg-secondary hover:text-fg" @click="clearToken">Clear</button>
+          </div>
+          <p id="access-token-help" class="text-[11px]" :class="authRequired ? 'text-danger' : 'text-fg-muted'" role="status">
+            {{ authRequired ? 'Token required or invalid. Enter a valid token and apply.' : 'Stored for this tab’s session only.' }}
+          </p>
+        </form>
         <RouterLink
           to="/settings"
           class="hero-button"
@@ -256,7 +303,7 @@ const adminPosture = computed(() => {
         <div class="mx-auto w-full max-w-6xl p-6">
           <RouterView v-slot="{ Component }">
             <Transition name="page" mode="out-in">
-              <component :is="Component" />
+              <component :is="Component" :key="authRevision" />
             </Transition>
           </RouterView>
         </div>

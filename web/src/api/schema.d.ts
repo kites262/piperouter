@@ -973,7 +973,7 @@ export interface components {
              * @description Machine-readable error code.
              * @enum {string}
              */
-            error: "validation_failed" | "revision_conflict" | "not_found" | "builtin_transport" | "transport_in_use" | "origin_not_allowed" | "invalid_request" | "method_not_allowed" | "internal_error";
+            error: "validation_failed" | "revision_conflict" | "not_found" | "builtin_transport" | "transport_in_use" | "unauthorized" | "origin_not_allowed" | "invalid_request" | "method_not_allowed" | "internal_error";
             /** @description Optional human-readable detail (never contains credentials or proxy URLs). */
             detail?: string;
             /** @description Present only for `validation_failed` — one entry per validation problem. */
@@ -981,6 +981,17 @@ export interface components {
         };
     };
     responses: {
+        /** @description `unauthorized` — missing or invalid Bearer token (when --access-token is enabled). */
+        Unauthorized: {
+            headers: {
+                /** @description Bearer realm="PipeRouter" */
+                "WWW-Authenticate"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
         /** @description `validation_failed` — the resulting configuration is invalid; the `issues` array lists every problem. Malformed JSON or an unprocessable body yields `invalid_request` instead. */
         BadRequestValidation: {
             headers: {
@@ -1057,6 +1068,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     getConfig: {
@@ -1077,6 +1089,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConfigEnvelope"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     putConfig: {
@@ -1102,6 +1115,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestValidation"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
             409: components["responses"]["RevisionConflict"];
         };
@@ -1129,6 +1143,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestInvalid"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
         };
     };
@@ -1150,6 +1165,7 @@ export interface operations {
                     "application/json": components["schemas"]["RouteListResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     createRoute: {
@@ -1175,6 +1191,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestValidation"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
             409: components["responses"]["RevisionConflict"];
         };
@@ -1200,6 +1217,7 @@ export interface operations {
                     "application/json": components["schemas"]["RouteConfig"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -1229,6 +1247,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestValidation"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["RevisionConflict"];
@@ -1253,6 +1272,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
             404: components["responses"]["NotFound"];
         };
@@ -1278,6 +1298,7 @@ export interface operations {
                     "application/json": components["schemas"]["RouteMetrics"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -1299,6 +1320,7 @@ export interface operations {
                     "application/json": components["schemas"]["TransportListResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     createTransport: {
@@ -1324,6 +1346,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestValidation"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
             409: components["responses"]["RevisionConflict"];
         };
@@ -1349,6 +1372,7 @@ export interface operations {
                     "application/json": components["schemas"]["TransportConfig"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -1378,6 +1402,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestValidation"];
+            401: components["responses"]["Unauthorized"];
             /** @description `builtin_transport` when `{name}` is `direct`, or `origin_not_allowed` when the Origin check fails. */
             403: {
                 headers: {
@@ -1410,6 +1435,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
             /** @description `builtin_transport` when `{name}` is `direct`, or `origin_not_allowed` when the Origin check fails. */
             403: {
                 headers: {
@@ -1449,6 +1475,7 @@ export interface operations {
                     "application/json": components["schemas"]["MetricsSnapshot"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     getMetricsHistory: {
@@ -1469,6 +1496,7 @@ export interface operations {
                     "application/json": components["schemas"]["MetricsHistory"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     getLogs: {
@@ -1496,6 +1524,7 @@ export interface operations {
                     "application/json": components["schemas"]["LogsResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     clearLogs: {
@@ -1514,6 +1543,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
         };
     };
@@ -1535,6 +1565,7 @@ export interface operations {
                     "application/json": components["schemas"]["DetailsCaptureStatus"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     setDetailsCapture: {
@@ -1559,6 +1590,7 @@ export interface operations {
                     "application/json": components["schemas"]["DetailsCaptureStatus"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
         };
     };
@@ -1582,6 +1614,7 @@ export interface operations {
                     "application/json": components["schemas"]["LogDetails"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     getLogDetailValue: {
@@ -1607,6 +1640,7 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     testRequest: {
@@ -1632,6 +1666,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestInvalid"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
         };
     };
@@ -1658,6 +1693,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestInvalid"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
             404: components["responses"]["NotFound"];
         };
@@ -1685,6 +1721,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequestInvalid"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["OriginNotAllowed"];
             404: components["responses"]["NotFound"];
         };

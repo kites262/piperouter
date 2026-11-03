@@ -338,3 +338,50 @@ func TestIsLoopbackListen(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminAccessToken(t *testing.T) {
+	backend := newBackend(t)
+	cfgPath := writeTestConfig(t, backend.URL)
+	a := startApp(t, Options{ConfigPath: cfgPath, AccessToken: "startup-secret"})
+	resp, _ := get(t, "http://"+a.AdminAddr()+"/api/v1/status")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated admin status = %d, want 401", resp.StatusCode)
+	}
+	req, err := http.NewRequest("GET", "http://"+a.AdminAddr()+"/api/v1/config", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer startup-secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK || strings.Contains(string(body), "startup-secret") {
+		t.Fatalf("authenticated config: status = %d, body = %s", resp.StatusCode, body)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "startup-secret") {
+		t.Fatal("token persisted to config")
+	}
+	resp, proxyBody := get(t, "http://"+a.ProxyAddr()+"/api/ping")
+	if resp.StatusCode != http.StatusOK || proxyBody != "backend:/ping" {
+		t.Fatalf("proxy must work without token: status = %d body = %s", resp.StatusCode, proxyBody)
+	}
+}
+
+func TestInvalidAccessToken(t *testing.T) {
+	for _, token := range []string{" ", "has space", "tab\t", "line\n", "非ASCII"} {
+		_, err := Start(context.Background(), Options{AccessToken: token})
+		if err == nil || err.Error() != "access token must contain only visible ASCII characters without spaces" {
+			t.Fatalf("invalid token must be rejected without echoing it: %v", err)
+		}
+	}
+}

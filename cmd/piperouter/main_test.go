@@ -162,7 +162,7 @@ func TestParseServeOptions(t *testing.T) {
 		if opts.Version != version {
 			t.Errorf("Version = %q, want %q", opts.Version, version)
 		}
-		if opts.ProxyListen != "" || opts.AdminListen != "" || opts.LogLevel != "" ||
+		if opts.ProxyListen != "" || opts.AdminListen != "" || opts.AccessToken != "" || opts.LogLevel != "" ||
 			opts.DisableAdmin || opts.DisableWeb {
 			t.Errorf("overrides should default to zero values, got %+v", opts)
 		}
@@ -174,6 +174,7 @@ func TestParseServeOptions(t *testing.T) {
 			"--config", "custom.yaml",
 			"--proxy-listen", ":18080",
 			"--admin-listen", "127.0.0.1:19090",
+			"--access-token", "test-token",
 			"--disable-admin",
 			"--disable-web",
 			"--log-level", "debug",
@@ -183,7 +184,7 @@ func TestParseServeOptions(t *testing.T) {
 		}
 		if opts.ConfigPath != "custom.yaml" || opts.ProxyListen != ":18080" ||
 			opts.AdminListen != "127.0.0.1:19090" || !opts.DisableAdmin ||
-			!opts.DisableWeb || opts.LogLevel != "debug" {
+			!opts.DisableWeb || opts.LogLevel != "debug" || opts.AccessToken != "test-token" {
 			t.Errorf("parsed options = %+v", opts)
 		}
 	})

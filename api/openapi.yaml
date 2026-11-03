@@ -8,6 +8,13 @@ info:
     proxy. Served under `/api/v1` by the admin server (default
     `127.0.0.1:9090`).
 
+    Authentication:
+    - Start with `--access-token <token>` to require `Authorization: Bearer <token>`
+      on every API request. Missing or invalid credentials return HTTP 401 with
+      a Bearer WWW-Authenticate challenge. Without the flag, authentication is off.
+    - The WebUI remains public; enter the token in its lower-left sidebar.
+      Tokens are runtime-only and never included in configuration responses.
+
     General rules:
     - All request and response bodies are JSON. Request bodies are limited
       to 1 MiB.
@@ -18,7 +25,7 @@ info:
       (`issues` only accompanies `validation_failed`). Error codes:
       `validation_failed`, `revision_conflict`, `not_found`,
       `builtin_transport`, `transport_in_use`, `origin_not_allowed`,
-      `invalid_request`, `method_not_allowed`, `internal_error`.
+      `invalid_request`, `method_not_allowed`, `internal_error`, `unauthorized`.
     - Configuration mutations accept an optional `revision`; when present it
       must match the active configuration revision or the API responds
       `409 {"error":"revision_conflict"}`. An absent or empty revision skips
@@ -28,6 +35,11 @@ info:
 
 servers:
   - url: /
+
+# Bearer authentication is optional only when --access-token is not configured.
+security:
+  - BearerAuth: []
+  - {}
 
 tags:
   - name: status
@@ -52,6 +64,8 @@ paths:
       operationId: getStatus
       summary: Get process and configuration status
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Current status.
           content:
@@ -65,6 +79,8 @@ paths:
       operationId: getConfig
       summary: Get the full normalized configuration
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Active configuration and its revision.
           content:
@@ -86,6 +102,8 @@ paths:
             schema:
               $ref: '#/components/schemas/ConfigUpdateRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Configuration applied; new revision returned.
           content:
@@ -116,6 +134,8 @@ paths:
             schema:
               $ref: '#/components/schemas/ValidateRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Validation outcome.
           content:
@@ -134,6 +154,8 @@ paths:
       summary: List routes
       description: Returns all configured routes in configuration order.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Route list.
           content:
@@ -154,6 +176,8 @@ paths:
             schema:
               $ref: '#/components/schemas/RouteUpsertRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Route created; new configuration revision returned.
           content:
@@ -175,6 +199,8 @@ paths:
       operationId: getRoute
       summary: Get a route
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: The route.
           content:
@@ -198,6 +224,8 @@ paths:
             schema:
               $ref: '#/components/schemas/RouteUpsertRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Route updated; new configuration revision returned.
           content:
@@ -217,6 +245,8 @@ paths:
       operationId: deleteRoute
       summary: Delete a route
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '204':
           description: Route deleted.
         '403':
@@ -232,6 +262,8 @@ paths:
       operationId: getRouteMetrics
       summary: Get metrics for one route
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Metrics for the named route.
           content:
@@ -251,6 +283,8 @@ paths:
         `{"name":"direct","type":"direct","url":""}` first, followed by
         configured transports in configuration order.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Transport list.
           content:
@@ -272,6 +306,8 @@ paths:
             schema:
               $ref: '#/components/schemas/TransportUpsertRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201':
           description: Transport created; new configuration revision returned.
           content:
@@ -294,6 +330,8 @@ paths:
       summary: Get a transport
       description: The built-in `direct` transport is readable like any other.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: The transport.
           content:
@@ -318,6 +356,8 @@ paths:
             schema:
               $ref: '#/components/schemas/TransportUpsertRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Transport updated; new configuration revision returned.
           content:
@@ -349,6 +389,8 @@ paths:
         more routes cannot be deleted (`409 transport_in_use`, with `detail`
         listing the referencing routes).
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '204':
           description: Transport deleted.
         '403':
@@ -379,6 +421,8 @@ paths:
         In-memory counters since process start (reset on restart), including
         per-route breakdowns and the access-log drop counter.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Current metrics snapshot.
           content:
@@ -399,6 +443,8 @@ paths:
         reloads, resets on restart. WebSocket connections count in the
         bucket where they ended.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Current 48h history.
           content:
@@ -440,6 +486,8 @@ paths:
             type: string
             enum: ['2xx', '3xx', '4xx', '5xx', 'error']
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Filtered log entries.
           content:
@@ -457,6 +505,8 @@ paths:
         operation is idempotent: clearing an empty or disabled ring still
         returns 204.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '204':
           description: Ring buffer cleared.
         '403':
@@ -468,6 +518,8 @@ paths:
       operationId: getDetailsCapture
       summary: Get request-details capture state
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Current temporary capture state and configured limits.
           content:
@@ -485,6 +537,8 @@ paths:
             schema:
               $ref: '#/components/schemas/DetailsCaptureRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Updated capture state.
           content:
@@ -505,6 +559,8 @@ paths:
           required: true
           schema: { type: string }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Captured details with long strings summarized.
           content:
@@ -527,6 +583,8 @@ paths:
           required: true
           schema: { type: string }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Complete value.
           content:
@@ -560,6 +618,8 @@ paths:
             schema:
               $ref: '#/components/schemas/RequestTestRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Test result (also returned when the probe itself failed; see `ok`).
           content:
@@ -590,6 +650,8 @@ paths:
             schema:
               $ref: '#/components/schemas/RouteTestRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Test result (also returned when the probe itself failed; see `ok`).
           content:
@@ -621,6 +683,8 @@ paths:
             schema:
               $ref: '#/components/schemas/TransportTestRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Test result (also returned when the probe itself failed; see `ok`).
           content:
@@ -635,6 +699,11 @@ paths:
           $ref: '#/components/responses/NotFound'
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Required when the server starts with --access-token.
   parameters:
     RouteName:
       name: name
@@ -654,6 +723,17 @@ components:
         pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
 
   responses:
+    Unauthorized:
+      description: '`unauthorized` — missing or invalid Bearer token (when --access-token is enabled).'
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          description: 'Bearer realm="PipeRouter"'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
     BadRequestValidation:
       description: >
         `validation_failed` — the resulting configuration is invalid; the
@@ -1577,6 +1657,7 @@ components:
             - not_found
             - builtin_transport
             - transport_in_use
+            - unauthorized
             - origin_not_allowed
             - invalid_request
             - method_not_allowed

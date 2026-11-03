@@ -415,6 +415,7 @@ export type ApiErrorCode =
   | 'not_found'
   | 'builtin_transport'
   | 'transport_in_use'
+  | 'unauthorized'
   | 'origin_not_allowed'
   | 'invalid_request'
   | 'method_not_allowed'

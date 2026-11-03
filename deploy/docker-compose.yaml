@@ -32,7 +32,7 @@ services:
       # topology business traffic should arrive through Caddy (HTTPS).
       # Change to "8080:8080" only if you want to expose plain HTTP directly.
       - "127.0.0.1:8080:8080"
-      # Control plane (admin API + WebUI) — NO AUTHENTICATION. Inside the
+      # Control plane (admin API + WebUI) — unauthenticated unless --access-token is set. Inside the
       # container it listens on 0.0.0.0 (required to be reachable through a
       # published port at all; the container's 127.0.0.1 is unreachable from
       # outside), which makes PipeRouter log a startup SECURITY WARNING —

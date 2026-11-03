@@ -1044,3 +1044,71 @@ func TestDiagnosticsEndpoints(t *testing.T) {
 		map[string]any{"transport": "direct", "url": "not a url"})
 	assertError(t, resp, body, http.StatusBadRequest, "invalid_request")
 }
+
+func TestAccessToken(t *testing.T) {
+	const token = "test-secret-token"
+	e := newTestEnv(t, func(d *api.Deps) {
+		d.AccessToken = token
+		d.WebUI = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, "public UI")
+		})
+	})
+	for _, path := range []string{"/api", "/api/", "/api/v1/status", "/api/v1/config", "/api/v1/logs", "/api/v1/unknown", "/api/v1/%63onfig", "/api/v1/../v1/config"} {
+		for _, method := range []string{"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD"} {
+			t.Run(method+path, func(t *testing.T) {
+				resp, body := e.do(t, method, path, nil)
+				if resp.StatusCode != http.StatusUnauthorized {
+					t.Fatalf("status = %d, want 401: %s", resp.StatusCode, body)
+				}
+				if resp.Header.Get("WWW-Authenticate") != `Bearer realm="PipeRouter"` {
+					t.Error("missing Bearer challenge")
+				}
+				if resp.Header.Get("Cache-Control") != "no-store" || resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+					t.Error("missing security/cache headers")
+				}
+			})
+		}
+	}
+	for _, h := range []string{"", "Bearer wrong", "Basic " + token, "Bearer", "Bearer ", "Bearer  " + token, "Bearer " + token + " extra"} {
+		resp, body := e.do(t, "GET", "/api/v1/config", nil, header{"Authorization", h})
+		if resp.StatusCode != http.StatusUnauthorized || strings.Contains(string(body), token) {
+			t.Fatalf("invalid credentials: status = %d, body = %s", resp.StatusCode, body)
+		}
+	}
+	resp, _ := e.do(t, "GET", "/api/v1/status?access_token="+token, nil)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Error("query token must not authenticate")
+	}
+	for _, scheme := range []string{"Bearer", "bearer", "BEARER"} {
+		resp, body := e.do(t, "GET", "/api/v1/config", nil, header{"Authorization", scheme + " " + token})
+		if resp.StatusCode != http.StatusOK || strings.Contains(string(body), token) {
+			t.Fatalf("authenticated config: status = %d, body = %s", resp.StatusCode, body)
+		}
+	}
+	resp, _ = e.do(t, "DELETE", "/api/v1/logs", nil, header{"Authorization", "Bearer " + token})
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("authenticated mutation status = %d, want 204", resp.StatusCode)
+	}
+	resp, _ = e.do(t, "DELETE", "/api/v1/logs", nil, header{"Authorization", "Bearer " + token}, header{"Origin", "https://evil.example"})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Error("authentication must retain origin protection")
+	}
+	for _, path := range []string{"/", "/assets/app.js", "/routes"} {
+		resp, body := e.do(t, "GET", path, nil)
+		if resp.StatusCode != http.StatusOK || string(body) != "public UI" {
+			t.Fatalf("UI must load without authentication: %d %s", resp.StatusCode, body)
+		}
+	}
+}
+
+func TestAccessTokenRejectsMultipleHeaders(t *testing.T) {
+	h := api.NewHandler(api.Deps{AccessToken: "secret"})
+	r := httptest.NewRequest("GET", "/api/v1/status", nil)
+	r.Header.Add("Authorization", "Bearer secret")
+	r.Header.Add("Authorization", "Bearer secret")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("multiple Authorization headers: status = %d, want 401", w.Code)
+	}
+}

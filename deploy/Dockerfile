@@ -7,7 +7,7 @@
 # Build from the REPO ROOT (the build context must be the repository):
 #   docker build -f deploy/Dockerfile -t piperouter:0.1.0 .
 #
-# Run (admin published to host loopback only — it has no auth):
+# Run (admin published to host loopback only — auth is optional via --access-token):
 #   docker run --rm -p 127.0.0.1:8080:8080 -p 127.0.0.1:9090:9090 piperouter:0.1.0
 
 ARG VERSION=0.1.0
@@ -53,7 +53,7 @@ COPY --from=backend /out/piperouter /usr/local/bin/piperouter
 # startup security warning is expected).
 COPY deploy/piperouter.yaml /etc/piperouter/piperouter.yaml
 
-# 8080 = proxy (data plane), 9090 = admin API + WebUI (control plane, NO AUTH:
+# 8080 = proxy (data plane), 9090 = admin API + WebUI (control plane, optional --access-token auth:
 # publish it to host loopback only, e.g. -p 127.0.0.1:9090:9090).
 EXPOSE 8080 9090
 

@@ -74,6 +74,7 @@ func parseServeOptions(args []string, stderr io.Writer) (app.Options, int) {
 	fs.StringVar(&opts.ConfigPath, "config", defaultConfigPath, "path to the configuration file")
 	fs.StringVar(&opts.ProxyListen, "proxy-listen", "", "override server.proxy.listen (runtime only, not persisted)")
 	fs.StringVar(&opts.AdminListen, "admin-listen", "", "override server.admin.listen (runtime only, not persisted)")
+	fs.StringVar(&opts.AccessToken, "access-token", "", "require Bearer token authentication for the admin API (runtime only)")
 	fs.BoolVar(&opts.DisableAdmin, "disable-admin", false, "disable the admin API and WebUI")
 	fs.BoolVar(&opts.DisableWeb, "disable-web", false, "disable the WebUI (admin API stays on)")
 	fs.StringVar(&opts.LogLevel, "log-level", "", "override runtime.log_level (debug|info|warn|error)")
@@ -144,6 +145,7 @@ Flags (serve):
   --config string         path to the configuration file (default %q)
   --proxy-listen string   override server.proxy.listen
   --admin-listen string   override server.admin.listen
+  --access-token string   require Bearer token authentication for the admin API
   --disable-admin         disable the admin API and WebUI
   --disable-web           disable the WebUI
   --log-level string      override runtime.log_level (debug|info|warn|error)

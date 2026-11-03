@@ -6,7 +6,7 @@ Ready-to-use copies of the Docker files referenced below live in [`deploy/`](../
 
 Two facts shape everything here:
 
-1. **The admin API and WebUI have no authentication in v0.1.** They bind `127.0.0.1:9090` by default and must never be reachable from an untrusted network without an authenticating layer in front.
+1. **Admin API authentication is optional via `--access-token <token>`.** Without it, the API is unauthenticated. They bind `127.0.0.1:9090` by default and must never be reachable from an untrusted network without an authenticating layer in front.
 2. **The config file's directory must be writable** by the PipeRouter process if you want to save from the WebUI: writes go through a same-directory temp file, an atomic rename, and a `<config>.bak` backup.
 
 ## systemd
@@ -212,6 +212,19 @@ Behavior and caveats:
 
 ## Exposing the admin plane
 
+Enable API authentication at startup:
+
+```bash
+piperouter serve --config /etc/piperouter/piperouter.yaml --access-token 'your-secret-token'
+```
+
+Send `Authorization: Bearer your-secret-token` on management requests. In the WebUI, enter the
+same token in the lower-left **Access Token** field and click **Apply**. It is stored for the
+current tab's session; **Clear** removes it. Missing or invalid credentials yield HTTP 401.
+The token is not persisted in YAML and requires a restart to change. The WebUI assets remain
+public. Use HTTPS at the reverse proxy (or an SSH tunnel) to protect tokens in transit.
+
+
 In order of preference:
 
 1. **Don't.** Leave `server.admin.listen: "127.0.0.1:9090"` and use an SSH tunnel when you need the WebUI:
@@ -221,10 +234,10 @@ In order of preference:
    # then open http://127.0.0.1:9090 locally
    ```
 
-2. **VPN / overlay network.** With WireGuard or Tailscale, bind the admin listener to the VPN interface address (e.g. `--admin-listen 100.64.0.5:9090`). Only VPN peers can reach it. PipeRouter still logs the non-loopback warning — that's a reminder, not an error.
+2. **VPN / overlay network.** With WireGuard or Tailscale, bind the admin listener to the VPN interface address (e.g. `--admin-listen 100.64.0.5:9090`). Only VPN peers can reach it. Without an access token, PipeRouter logs a non-loopback warning.
 
 3. **Authenticating reverse proxy.** Caddy with `basic_auth` (or forward-auth to an SSO provider) as shown above. Keep PipeRouter's own listener unreachable from outside (loopback, or an unpublished container port).
 
-Never bind the admin API to a public interface bare. There is no login, so anyone who can reach the port can read and rewrite your entire routing configuration. Additional guard rails that exist regardless: the admin API never emits CORS headers, rejects cross-origin mutating requests, and its logs/metrics never contain request bodies or sensitive headers — but none of that replaces authentication.
+Never bind the admin API to a public interface bare. Without `--access-token` or authentication at a reverse proxy, anyone who can reach the port can read and rewrite your entire routing configuration. Additional guard rails that exist regardless: the admin API never emits CORS headers, rejects cross-origin mutating requests, and its logs/metrics never contain request bodies or sensitive headers — but none of that replaces authentication.
 
 If a deployment doesn't need runtime management at all, run with `--disable-admin`: the data plane and config-file hot reload keep working, and the attack surface drops to zero.
